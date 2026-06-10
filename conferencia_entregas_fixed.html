@@ -1,0 +1,4190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal de Conferência de Entregas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<!-- Firebase SDKs — carregados localmente (sem CDN) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   FIREBASE SETUP (compat mode — funciona no Electron)
+══════════════════════════════════════════════════════ */
+(function() {
+  const firebaseConfig = {
+    apiKey:            "AIzaSyCQSA_blNZx-sBE9DuN1-NBj1KaDaotx4s",
+    authDomain:        "portal-conferencia.firebaseapp.com",
+    projectId:         "portal-conferencia",
+    storageBucket:     "portal-conferencia.firebasestorage.app",
+    messagingSenderId: "1087251395644",
+    appId:             "1:1087251395644:web:4a9d60b1cff9aa7d127f39"
+  };
+
+  let fbDB = null;
+
+  function initFB() {
+    try {
+      if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+      fbDB = firebase.firestore();
+      console.log('🔥 Firebase conectado!');
+      setSyncStatus('synced');
+      // load occTypes from cloud on init
+      loadCloudOccTypes();
+      // start real-time listener for today
+      startTodayListener();
+    } catch(e) {
+      console.warn('Firebase init error:', e);
+      setSyncStatus('offline');
+    }
+  }
+
+  /* ── SYNC STATUS ── */
+  function setSyncStatus(state) {
+    const badge = document.getElementById('syncBadge');
+    const dot   = document.getElementById('syncDot');
+    const text  = document.getElementById('syncText');
+    if(!badge) return;
+    badge.className = 'sync-badge show ' + state;
+    if(state === 'syncing') {
+      dot.className = 'sync-dot pulse';
+      text.textContent = 'Sincronizando...';
+    } else if(state === 'synced') {
+      dot.className = 'sync-dot';
+      text.textContent = '☁️ Sincronizado';
+      setTimeout(() => badge.classList.remove('show'), 3000);
+    } else if(state === 'offline') {
+      dot.className = 'sync-dot';
+      text.textContent = '📴 Modo offline';
+    } else if(state === 'error') {
+      dot.className = 'sync-dot';
+      text.textContent = '⚠️ Erro de sincronização';
+    }
+  }
+  window.setSyncStatus = setSyncStatus;
+
+  /* ── SAVE TODAY ── */
+  window.fbSaveToday = async function(rows) {
+    if(!fbDB || !rows || !rows.length) return;
+    try {
+      setSyncStatus('syncing');
+      const key = window.todayKey ? window.todayKey() : new Date().toISOString().slice(0,10);
+      await fbDB.collection('conferencias').doc(key).set({
+        date: key, rows: rows, saved: new Date().toISOString()
+      });
+      setSyncStatus('synced');
+    } catch(e) {
+      console.warn('Firebase save error:', e);
+      setSyncStatus('offline');
+    }
+  };
+
+  /* ── SAVE OCC TYPES ── */
+  window.fbSaveOccTypes = async function(types) {
+    if(!fbDB) return;
+    try {
+      await fbDB.collection('config').doc('occTypes').set({ types });
+    } catch(e) { console.warn('Firebase occTypes save error:', e); }
+  };
+
+  /* ── LOAD OCC TYPES FROM CLOUD ── */
+  async function loadCloudOccTypes() {
+    if(!fbDB) return;
+    try {
+      const snap = await fbDB.collection('config').doc('occTypes').get();
+      if(snap.exists && snap.data().types && snap.data().types.length) {
+        window._fbOccTypes = snap.data().types;
+        window.dispatchEvent(new Event('fbOccTypesLoaded'));
+      }
+    } catch(e) { console.warn('Firebase occTypes load error:', e); }
+  }
+
+  /* ── LOAD HISTORY ── */
+  window.fbLoadHistory = async function() {
+    if(!fbDB) return null;
+    try {
+      const snap = await fbDB.collection('conferencias').get();
+      const result = {};
+      snap.forEach(d => { result[d.id] = d.data(); });
+      return result;
+    } catch(e) {
+      console.warn('Firebase history load error:', e);
+      return null;
+    }
+  };
+
+  /* ── DELETE HISTORY ENTRY ── */
+  window.fbDeleteHistEntry = async function(key) {
+    if(!fbDB) return;
+    try {
+      await fbDB.collection('conferencias').doc(key).delete();
+    } catch(e) { console.warn('Firebase delete error:', e); }
+  };
+
+  /* ── REAL-TIME LISTENER FOR TODAY ── */
+  let todayUnsubscribe = null;
+  function startTodayListener() {
+    if(!fbDB) return;
+    const key = window.todayKey ? window.todayKey() : new Date().toISOString().slice(0,10);
+    let first = true;
+    todayUnsubscribe = fbDB.collection('conferencias').doc(key).onSnapshot(snap => {
+      if(first) { first = false; return; }
+      if(!snap.exists) return;
+      const data = snap.data();
+      if(!data || !data.rows) return;
+      // only auto-update if no active session
+      if(typeof rows !== 'undefined' && !rows.length) {
+        rows = data.rows;
+        document.getElementById('importSection').style.display = 'none';
+        document.getElementById('dashboard').style.display     = 'block';
+        if(typeof renderDashboard === 'function') renderDashboard();
+        if(typeof toast === 'function') toast('🔄 Dados atualizados em tempo real!','t-green');
+      }
+    }, err => console.warn('Listener error:', err));
+  }
+
+  // init Firebase after DOM is ready
+  if(document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFB);
+  } else {
+    initFB();
+  }
+})();
+</script>
+
+<style>
+/* ══════════════════════════════════════════════════
+   TOKENS & RESET
+══════════════════════════════════════════════════ */
+:root {
+  --bg:        #F8FAFC;
+  --surface:   #ffffff;
+  --card:      #ffffff;
+  --card-alt:  #F8FAFC;
+  --border:    #E2E8F0;
+  --border2:   #CBD5E1;
+  --accent:    #2563EB;
+  --accent-h:  #1D4ED8;
+  --accent-bg: #EFF6FF;
+  --accent2:   #7C3AED;
+  --green:     #22C55E;
+  --green-bg:  #F0FDF4;
+  --green-bd:  #BBF7D0;
+  --amber:     #F59E0B;
+  --amber-bg:  #FFFBEB;
+  --amber-bd:  #FDE68A;
+  --red:       #EF4444;
+  --red-bg:    #FEF2F2;
+  --red-bd:    #FECACA;
+  --pink:      #EC4899;
+  --pink-bg:   #FDF2F8;
+  --pink-bd:   #FBCFE8;
+  --slate:     #64748B;
+  --text:      #0F172A;
+  --text2:     #64748B;
+  --text3:     #94A3B8;
+  --shadow:    0 1px 3px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.03);
+  --shadow-md: 0 4px 20px rgba(0,0,0,.06), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,.08), 0 4px 8px rgba(0,0,0,.04);
+  --radius:    16px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body {
+  font-family: 'Inter', Arial, Helvetica, system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius:3px; }
+button { font-family: inherit; cursor:pointer; }
+input, select, textarea { font-family: inherit; }
+
+/* ══════════════════════════════════════════════════
+   LOGIN SCREEN
+══════════════════════════════════════════════════ */
+#loginScreen {
+  position: fixed; inset: 0; z-index: 9999;
+  background: linear-gradient(135deg, #1e3a5f 0%, #2563EB 50%, #7C3AED 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Inter', Arial, sans-serif;
+}
+.login-box {
+  background: #fff; border-radius: 24px;
+  padding: 44px 40px; width: 100%; max-width: 380px;
+  box-shadow: 0 24px 64px rgba(0,0,0,.25);
+  text-align: center;
+}
+.login-logo {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: linear-gradient(135deg, #2563EB, #7C3AED);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; margin: 0 auto 18px;
+  box-shadow: 0 8px 20px rgba(37,99,235,.4);
+}
+.login-box h1 { font-size: 20px; font-weight: 800; color: #0F172A; margin-bottom: 4px; }
+.login-box p  { font-size: 13px; color: #64748B; margin-bottom: 28px; }
+.login-field  { margin-bottom: 14px; text-align: left; }
+.login-field label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 5px; }
+.login-field input {
+  width: 100%; padding: 11px 14px; border-radius: 10px;
+  border: 1.5px solid #E2E8F0; font-size: 14px; color: #0F172A;
+  background: #F8FAFC; outline: none; transition: border-color .2s;
+}
+.login-field input:focus { border-color: #2563EB; background: #fff; }
+.login-error { font-size: 12px; color: #EF4444; margin: -6px 0 10px; min-height: 16px; text-align: left; }
+.login-btn {
+  width: 100%; padding: 12px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, #2563EB, #4F46E5);
+  color: #fff; font-size: 14px; font-weight: 700;
+  cursor: pointer; margin-top: 4px;
+  box-shadow: 0 4px 14px rgba(37,99,235,.4);
+  transition: all .2s;
+}
+.login-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(37,99,235,.5); }
+.login-footer { font-size: 11px; color: #94A3B8; margin-top: 20px; }
+
+/* ══════════════════════════════════════════════════
+   AUTOSAVE INDICATOR
+══════════════════════════════════════════════════ */
+#autosaveBar {
+  position: fixed; top:0; left:0; right:0;
+  height: 3px; background: var(--border); z-index: 1000;
+}
+#autosaveProgress {
+  height: 100%; width: 0; background: var(--green);
+  transition: width .4s ease, opacity .4s;
+}
+#autosaveBadge {
+  position: fixed; bottom:20px; right:20px; z-index:500;
+  background: var(--surface); border:1px solid var(--border);
+  border-radius: 20px; padding:6px 12px;
+  font-size:11px; font-weight:600; color: var(--text3);
+  display:flex; align-items:center; gap:6px;
+  box-shadow: var(--shadow); transition: all .3s;
+  opacity:0; pointer-events:none;
+}
+#autosaveBadge.show { opacity:1; }
+#autosaveBadge.saving { color: var(--amber); border-color: var(--amber-bd); }
+#autosaveBadge.saved  { color: var(--green); border-color: var(--green-bd); }
+
+/* ── SYNC BADGE ── */
+#syncBadge {
+  position: fixed; bottom: 56px; right: 20px; z-index: 500;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 6px 12px;
+  font-size: 11px; font-weight: 600; color: var(--text3);
+  display: flex; align-items: center; gap: 6px;
+  box-shadow: var(--shadow); transition: all .3s;
+  opacity: 0; pointer-events: none;
+}
+#syncBadge.show { opacity: 1; }
+#syncBadge.syncing { color: var(--accent); border-color: #bfdbfe; }
+#syncBadge.synced  { color: var(--green);  border-color: var(--green-bd); }
+#syncBadge.offline { color: var(--text3);  border-color: var(--border); }
+#syncBadge.error   { color: var(--red);    border-color: var(--red-bd); }
+.sync-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0;
+}
+.sync-dot.pulse { animation: pulse 1.2s ease infinite; }
+.as-dot {
+  width:7px; height:7px; border-radius:50%;
+  background: currentColor; flex-shrink:0;
+}
+.as-dot.pulse { animation: pulse 1.2s ease infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ══════════════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════════════ */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 68px;
+  position: sticky; top:0; z-index:200;
+  box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(0,0,0,.04);
+}
+.logo {
+  display:flex; align-items:center; gap:12px;
+}
+.logo-icon {
+  width:40px; height:40px; border-radius:12px;
+  background: linear-gradient(135deg, #2563EB, #7C3AED);
+  display:flex; align-items:center; justify-content:center;
+  font-size:19px; flex-shrink:0;
+  box-shadow: 0 4px 12px rgba(37,99,235,.35);
+}
+.logo h1 {
+  font-size:16px; font-weight:700; color:var(--text); letter-spacing:-.3px;
+}
+.logo p { font-size:11px; color:var(--text3); margin-top:1px; font-weight:500; }
+.header-right { display:flex; align-items:center; gap:10px; }
+.date-pill {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 7px 14px; border-radius: 14px;
+  font-size: 12px; font-weight: 600; color: var(--text2);
+  box-shadow: var(--shadow);
+}
+.btn-icon {
+  background: var(--card-alt); border: 1px solid var(--border);
+  width: 38px; height: 38px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; transition: all .2s; color: var(--text2);
+}
+.btn-icon:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+
+/* ══════════════════════════════════════════════════
+   NAV TABS
+══════════════════════════════════════════════════ */
+.nav-tabs {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  display: flex; gap:0;
+}
+.tab {
+  padding: 14px 20px; font-size: 13px; font-weight: 600;
+  color: var(--text3); border-bottom: 2px solid transparent;
+  transition: all .2s; cursor: pointer; white-space: nowrap;
+  display: flex; align-items: center; gap: 7px;
+  letter-spacing: -.1px;
+}
+.tab:hover { color: var(--text2); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ══════════════════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════════════════ */
+.page { display:none; }
+.page.active { display:block; }
+main { padding: 28px 32px; max-width: 1480px; margin: 0 auto; }
+
+/* ══════════════════════════════════════════════════
+   BUTTONS
+══════════════════════════════════════════════════ */
+.btn {
+  display:inline-flex; align-items:center; gap:7px;
+  padding: 10px 20px; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 700; border: none;
+  transition: all .2s ease; white-space: nowrap;
+  letter-spacing: -.1px;
+}
+.btn-primary {
+  background: linear-gradient(135deg, #2563EB, #4F46E5);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(37,99,235,.4);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(37,99,235,.5); }
+.btn-outline {
+  background: var(--surface); color: var(--text2);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.btn-outline:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); transform: translateY(-1px); }
+.btn-green {
+  background: linear-gradient(135deg, #22C55E, #16A34A);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(34,197,94,.35);
+}
+.btn-green:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(34,197,94,.45); }
+.btn-amber {
+  background: var(--amber-bg); color: var(--amber);
+  border: 1px solid var(--amber-bd);
+}
+.btn-amber:hover { background: #fef3c7; transform: translateY(-1px); }
+.btn-red {
+  background: var(--red-bg); color: var(--red);
+  border: 1px solid var(--red-bd);
+}
+.btn-red:hover { background: #fee2e2; transform: translateY(-1px); }
+.btn-sm { padding: 7px 14px; font-size: 12px; }
+.btn-lg { padding: 13px 28px; font-size: 14px; }
+
+/* ══════════════════════════════════════════════════
+   IMPORT ZONE
+══════════════════════════════════════════════════ */
+#importSection { margin-bottom:0; }
+.import-zone {
+  border:2px dashed var(--border2);
+  border-radius:var(--radius-lg);
+  background:var(--surface);
+  padding:56px 40px;
+  text-align:center;
+  transition:all .2s;
+  cursor:pointer;
+}
+.import-zone:hover, .import-zone.drag {
+  border-color:var(--accent);
+  background:var(--accent-bg);
+}
+.import-zone .iz-icon { font-size:44px; margin-bottom:14px; display:block; }
+.import-zone h2 { font-size:19px; font-weight:700; color:var(--text); margin-bottom:6px; }
+.import-zone p { font-size:13px; color:var(--text3); margin-bottom:22px; }
+.import-zone input[type=file] { display:none; }
+
+/* ══════════════════════════════════════════════════
+   KPI STRIP
+══════════════════════════════════════════════════ */
+.kpis {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:16px;
+  margin-bottom:24px;
+}
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  box-shadow: var(--shadow-md);
+  position: relative;
+  overflow: hidden;
+  transition: all .25s ease;
+  min-height: 160px;
+  cursor: default;
+}
+.kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  opacity: .05;
+  transform: translate(30px, -30px);
+}
+.kpi.c-blue::before  { background: #2563EB; }
+.kpi.c-green::before { background: #22C55E; }
+.kpi.c-amber::before { background: #F59E0B; }
+.kpi.c-red::before   { background: #EC4899; }
+.kpi:hover { box-shadow: 0 12px 30px rgba(0,0,0,.10); transform: translateY(-4px); }
+.kpi-icon {
+  width: 44px; height: 44px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; margin-bottom: 14px; flex-shrink: 0;
+}
+.kpi.c-blue  .kpi-icon { background: #EFF6FF; }
+.kpi.c-green .kpi-icon { background: #F0FDF4; }
+.kpi.c-amber .kpi-icon { background: #FFFBEB; }
+.kpi.c-red   .kpi-icon { background: var(--pink-bg); }
+.kpi-accent {
+  position:absolute; top:0; left:0; right:0; height:4px;
+  border-radius:var(--radius-xl) var(--radius-xl) 0 0;
+}
+.kpi.c-blue  .kpi-accent { background: linear-gradient(90deg,#2563EB,#4F46E5); }
+.kpi.c-green .kpi-accent { background: linear-gradient(90deg,#22C55E,#16A34A); }
+.kpi.c-amber .kpi-accent { background: linear-gradient(90deg,#F59E0B,#D97706); }
+.kpi.c-red   .kpi-accent { background: linear-gradient(90deg,#EC4899,#DB2777); }
+.kpi-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--text3); margin-bottom: 8px;
+}
+.kpi-value {
+  font-size: 36px; font-weight: 800; color: var(--text); line-height: 1;
+  letter-spacing: -1px;
+}
+.kpi-sub { font-size: 12px; color: var(--text3); margin-top: 6px; font-weight: 500; }
+.kpi-badge {
+  display: inline-block; margin-top: 8px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+}
+.kpi.c-amber .kpi-badge { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd); }
+.kpi.c-red   .kpi-badge { background: var(--pink-bg); color: var(--pink); border: 1px solid var(--pink-bd); }
+.kpi.c-green .kpi-badge { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+.kpi-trend {
+  font-size: 11px; font-weight: 700; color: var(--green);
+  margin-top: 4px; display: flex; align-items: center; gap: 3px;
+}
+
+/* ══════════════════════════════════════════════════
+   CHARTS ROW
+══════════════════════════════════════════════════ */
+.charts-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.4fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-md);
+  transition: all .25s ease;
+}
+.chart-card:hover { box-shadow: 0 12px 30px rgba(0,0,0,.08); transform: translateY(-2px); }
+.chart-card h3 {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--text3); margin-bottom: 18px;
+}
+.chart-wrap {
+  height: 175px;
+  display: flex; align-items: center; justify-content: center;
+}
+.legend { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+.leg-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text2); font-weight: 500;
+}
+.leg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.leg-val { margin-left: auto; font-weight: 800; color: var(--text); font-size: 14px; }
+
+/* occurrence type chart (bar) */
+.occ-bars { display:flex; flex-direction:column; gap:10px; margin-top:4px; }
+.occ-bar-item { display:flex; align-items:center; gap:10px; }
+.occ-bar-label { font-size:11px; color:var(--text2); width:90px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.occ-bar-track { flex:1; height:8px; background:var(--border); border-radius:6px; overflow:hidden; }
+.occ-bar-fill { height:100%; border-radius:6px; background:linear-gradient(90deg,#2563EB,#7C3AED); transition:width .6s ease; }
+.occ-bar-count { font-size:11px; font-weight:800; color:var(--text); width:20px; text-align:right; }
+
+/* ══════════════════════════════════════════════════
+   TOOLBAR (search + actions)
+══════════════════════════════════════════════════ */
+.toolbar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-bottom: none;
+  padding: 16px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+  box-shadow: var(--shadow);
+}
+.toolbar-left { display:flex; align-items:center; gap:12px; }
+.toolbar h3 { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -.2px; }
+.search-box {
+  display: flex; align-items: center; gap: 9px;
+  background: var(--card-alt); border: 1.5px solid var(--border);
+  border-radius: 14px; padding: 9px 16px;
+  min-width: 260px; transition: all .2s;
+  box-shadow: var(--shadow);
+}
+.search-box:focus-within { border-color: var(--accent); background: #fff; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.search-box span { color: var(--text3); font-size: 14px; }
+.search-box input {
+  border: none; background: transparent; outline: none;
+  font-size: 13px; color: var(--text); width: 100%; font-family: 'Inter', sans-serif;
+}
+.search-box input::placeholder { color: var(--text3); }
+.toolbar-right { display:flex; gap:10px; align-items:center; }
+
+/* ══════════════════════════════════════════════════
+   TABLE
+══════════════════════════════════════════════════ */
+.table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+table { width:100%; border-collapse:collapse; }
+thead tr { background: var(--card-alt); }
+th {
+  padding: 12px 16px; text-align: left;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--text3); white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px; vertical-align: middle;
+}
+tr:last-child td { border-bottom:none; }
+tr.hidden-row { display:none; }
+tr:hover td { background: var(--card-alt); transition: background .15s; }
+
+.rank { font-size:12px; font-weight:700; color:var(--text3); }
+.driver-name { font-weight:600; color:var(--text); }
+.plate {
+  font-size: 11px; font-weight: 700; color: var(--text2);
+  background: var(--card-alt); padding: 3px 9px;
+  border-radius: 8px; font-variant-numeric: tabular-nums;
+  letter-spacing: .5px; border: 1px solid var(--border);
+}
+.cte-num { font-size:15px; font-weight:800; color:var(--text); }
+
+/* editable cells */
+.sel-status {
+  appearance:none; -webkit-appearance:none;
+  background:var(--card-alt) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 8px center;
+  border:1px solid var(--border2);
+  color:var(--text2); padding:5px 26px 5px 10px;
+  border-radius:var(--radius-sm); font-size:12px; font-weight:500;
+  outline:none; cursor:pointer; min-width:140px;
+  transition:all .15s;
+}
+.sel-status:focus { border-color:var(--accent); background-color:#fff; }
+.sel-status.st-ret  { background-color:var(--green-bg); border-color:var(--green-bd); color:var(--green); font-weight:600; }
+.sel-status.st-nret { background-color:var(--red-bg);   border-color:var(--red-bd);   color:var(--red);   font-weight:600; }
+
+/* ── MULTI-OCCURRENCE PICKER ── */
+.occ-cell {
+  min-width: 220px;
+  max-width: 320px;
+}
+.occ-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.occ-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 0;
+}
+.occ-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-bd);
+  color: var(--amber);
+  border-radius: 20px;
+  padding: 2px 8px 2px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.occ-tag-remove {
+  background: none;
+  border: none;
+  color: var(--amber);
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 1px;
+  cursor: pointer;
+  opacity: .7;
+  transition: opacity .15s;
+}
+.occ-tag-remove:hover { opacity: 1; }
+.occ-add-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.occ-add-select {
+  appearance: none; -webkit-appearance: none;
+  background: var(--card-alt) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 7px center;
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  padding: 4px 24px 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  transition: border .15s;
+}
+.occ-add-select:focus { border-color: var(--accent); background-color: #fff; }
+.occ-add-select:disabled { opacity: .38; cursor: not-allowed; }
+.occ-add-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  width: 24px; height: 24px;
+  font-size: 15px;
+  line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+.occ-add-btn:hover { background: var(--accent-h); }
+.occ-add-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+.pct-badge {
+  display:inline-block; padding:3px 9px;
+  border-radius:20px; font-size:11px; font-weight:700;
+  background:var(--card-alt); color:var(--text3);
+}
+.pct-badge.has-val { background:var(--amber-bg); color:var(--amber); }
+
+.inp-obs {
+  border:1px solid transparent;
+  background:transparent;
+  color:var(--text2); padding:5px 9px;
+  border-radius:var(--radius-sm); font-size:12px;
+  outline:none; width:100%; min-width:160px;
+  transition:all .15s;
+}
+.inp-obs:disabled { opacity:.35; cursor:not-allowed; }
+.inp-obs:not(:disabled):hover { border-color:var(--border2); background:var(--card-alt); }
+.inp-obs:not(:disabled):focus { border-color:var(--accent); background:#fff; }
+
+.new-conf-bar {
+  display:flex; justify-content:center; margin-bottom:20px;
+}
+
+/* ══════════════════════════════════════════════════
+   HISTORY PAGE
+══════════════════════════════════════════════════ */
+.hist-toolbar {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:16px; flex-wrap:wrap; gap:10px;
+}
+.hist-toolbar h2 { font-size:16px; font-weight:700; }
+.hist-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(260px,1fr));
+  gap:12px;
+}
+.hist-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:18px;
+  cursor:pointer; transition:all .2s;
+  box-shadow:var(--shadow); position:relative;
+}
+.hist-card:hover { box-shadow:var(--shadow-md); border-color:var(--accent); transform:translateY(-1px); }
+.hist-card-top { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:8px; }
+.hist-date { font-size:16px; font-weight:800; color:var(--text); }
+.hist-weekday { font-size:11px; color:var(--text3); margin-top:2px; }
+.hist-del-btn {
+  background:var(--red-bg); border:1px solid var(--red-bd);
+  color:var(--red); width:26px; height:26px;
+  border-radius:var(--radius-sm); font-size:13px;
+  display:flex; align-items:center; justify-content:center;
+  transition:all .15s; flex-shrink:0;
+}
+.hist-del-btn:hover { background:#fee2e2; }
+.hist-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.chip {
+  padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
+}
+.chip-blue  { background: var(--accent-bg); color: var(--accent); border: 1px solid #BFDBFE; }
+.chip-amber { background: var(--amber-bg);  color: var(--amber);  border: 1px solid var(--amber-bd); }
+.chip-red   { background: var(--red-bg);    color: var(--red);    border: 1px solid var(--red-bd); }
+.chip-green { background: var(--green-bg);  color: #16A34A;       border: 1px solid var(--green-bd); }
+.hist-empty {
+  grid-column:1/-1; text-align:center; padding:60px 20px;
+  color:var(--text3);
+}
+.hist-empty .ei { font-size:44px; display:block; margin-bottom:12px; }
+
+/* ══════════════════════════════════════════════════
+   OCCURRENCE TYPES PAGE
+══════════════════════════════════════════════════ */
+.occ-page-grid {
+  display:grid; grid-template-columns:1fr 1fr; gap:20px;
+}
+.occ-panel {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden;
+}
+.occ-panel-head {
+  padding:14px 18px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+  background:var(--card-alt);
+}
+.occ-panel-head h3 { font-size:13px; font-weight:700; }
+.occ-panel-body { padding:18px; }
+.form-row { display:flex; gap:8px; margin-bottom:14px; }
+.inp-code {
+  border:1px solid var(--border2); background:var(--card-alt);
+  color:var(--text); padding:8px 11px;
+  border-radius:var(--radius-sm); font-size:13px; font-weight:700;
+  outline:none; width:80px; text-align:center;
+  transition:border .15s;
+}
+.inp-code:focus { border-color:var(--accent); background:#fff; }
+.inp-desc {
+  border:1px solid var(--border2); background:var(--card-alt);
+  color:var(--text); padding:8px 11px;
+  border-radius:var(--radius-sm); font-size:13px;
+  outline:none; flex:1;
+  transition:border .15s;
+}
+.inp-desc:focus { border-color:var(--accent); background:#fff; }
+.occ-list { display:flex; flex-direction:column; gap:1px; max-height:420px; overflow-y:auto; }
+.occ-item {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px; border-radius:var(--radius-sm);
+  transition:background .15s;
+}
+.occ-item:hover { background:var(--card-alt); }
+.occ-code-pill {
+  background:var(--accent-bg); color:var(--accent);
+  border:1px solid #bfdbfe;
+  padding:3px 9px; border-radius:20px;
+  font-size:11px; font-weight:800; flex-shrink:0; min-width:38px; text-align:center;
+}
+.occ-desc-text { font-size:13px; color:var(--text); flex:1; }
+.occ-remove {
+  background:none; border:none; color:var(--text3);
+  font-size:16px; line-height:1; padding:2px 5px;
+  border-radius:4px; transition:all .15s;
+}
+.occ-remove:hover { background:var(--red-bg); color:var(--red); }
+.occ-import-zone {
+  border:2px dashed var(--border2); border-radius:var(--radius);
+  padding:24px 20px; text-align:center; cursor:pointer;
+  transition:all .2s; background:var(--card-alt);
+}
+.occ-import-zone:hover { border-color:var(--accent); background:var(--accent-bg); }
+.occ-import-zone input { display:none; }
+.occ-hint { font-size:12px; color:var(--text3); margin-top:6px; }
+.occ-hint strong { color:var(--text2); }
+.occ-empty { text-align:center; padding:30px; color:var(--text3); font-size:13px; }
+
+/* ══════════════════════════════════════════════════
+   MODAL
+══════════════════════════════════════════════════ */
+.overlay {
+  position:fixed; inset:0; background:rgba(15,23,42,.45);
+  z-index:400; display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity .2s;
+  backdrop-filter:blur(3px);
+}
+.overlay.open { opacity:1; pointer-events:all; }
+.modal {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius-lg); padding:28px;
+  width:90%; max-width:420px;
+  transform:scale(.97); transition:transform .2s;
+  box-shadow:var(--shadow-lg);
+}
+.overlay.open .modal { transform:scale(1); }
+.modal h2 { font-size:17px; font-weight:700; margin-bottom:6px; }
+.modal p  { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:20px; }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; }
+
+/* ══════════════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════════════ */
+#toast {
+  position:fixed; bottom:60px; right:20px; z-index:600;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:11px 16px;
+  font-size:13px; font-weight:500; color:var(--text);
+  box-shadow:var(--shadow-lg);
+  transform:translateY(16px) scale(.97); opacity:0;
+  transition:all .25s cubic-bezier(.34,1.56,.64,1);
+  max-width:300px; display:flex; align-items:center; gap:7px;
+  pointer-events:none;
+}
+#toast.show { transform:translateY(0) scale(1); opacity:1; }
+#toast.t-green { border-color:var(--green-bd); background:var(--green-bg); color:var(--green); }
+#toast.t-red   { border-color:var(--red-bd);   background:var(--red-bg);   color:var(--red); }
+#toast.t-amber { border-color:var(--amber-bd); background:var(--amber-bg); color:var(--amber); }
+
+/* ══════════════════════════════════════════════════
+   ABA OCORRÊNCIAS — PAINEL COMPLETO
+══════════════════════════════════════════════════ */
+.occpage-toolbar {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:18px; flex-wrap:wrap; gap:10px;
+}
+.occpage-toolbar h2 { font-size:16px; font-weight:700; }
+.occpage-filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.occpage-filters select, .occpage-filters input {
+  border:1px solid var(--border2); background:var(--card-alt);
+  color:var(--text2); padding:6px 10px;
+  border-radius:var(--radius-sm); font-size:12px; outline:none; transition:border .15s;
+}
+.occpage-filters select:focus, .occpage-filters input:focus { border-color:var(--accent); background:#fff; }
+.occ-kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+.occpage-charts { display:grid; grid-template-columns:1.2fr 1fr 1.4fr; gap:14px; margin-bottom:20px; }
+.occpage-chart-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:18px; box-shadow:var(--shadow);
+}
+.occpage-chart-card h3 {
+  font-size:11px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.7px; color:var(--text3); margin-bottom:14px;
+}
+.timeline-bars { display:flex; flex-direction:column; gap:5px; }
+.timeline-item { display:flex; align-items:center; gap:8px; }
+.timeline-date { font-size:10px; color:var(--text3); width:52px; flex-shrink:0; }
+.timeline-track { flex:1; height:10px; background:var(--border); border-radius:5px; overflow:hidden; }
+.timeline-fill { height:100%; border-radius:5px; background:linear-gradient(90deg,var(--accent),#7c3aed); transition:width .5s ease; }
+.timeline-val { font-size:10px; font-weight:700; color:var(--accent); width:20px; text-align:right; }
+.occpage-cards-section { margin-bottom:20px; }
+.occpage-cards-section h3 {
+  font-size:12px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.7px; color:var(--text3); margin-bottom:12px;
+}
+.occpage-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:10px; }
+.occ-driver-card {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); transition:all .2s;
+}
+.occ-driver-card:hover { box-shadow:var(--shadow-md); border-color:var(--accent); transform:translateY(-1px); }
+.occ-driver-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.occ-driver-name { font-size:13px; font-weight:700; color:var(--text); }
+.occ-driver-total {
+  font-size:11px; font-weight:800; color:#fff;
+  background:var(--accent); border-radius:20px; padding:2px 9px;
+}
+.occ-driver-tags { display:flex; flex-wrap:wrap; gap:4px; }
+.occ-driver-tag {
+  display:inline-flex; align-items:center; gap:4px;
+  background:var(--amber-bg); border:1px solid var(--amber-bd);
+  color:var(--amber); border-radius:20px; padding:2px 8px; font-size:10px; font-weight:700;
+}
+.occ-driver-dates { font-size:10px; color:var(--text3); margin-top:6px; }
+.occpage-table-head {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:10px; flex-wrap:wrap; gap:8px;
+}
+.occpage-table-head h3 {
+  font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--text3);
+}
+.occ-detail-table { width:100%; border-collapse:collapse; }
+.occ-detail-table thead tr { background:var(--card-alt); }
+.occ-detail-table th {
+  padding:9px 13px; text-align:left; font-size:10px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.6px; color:var(--text3);
+  white-space:nowrap; border-bottom:1px solid var(--border);
+}
+.occ-detail-table td { padding:8px 13px; border-bottom:1px solid var(--border); font-size:12px; vertical-align:middle; }
+.occ-detail-table tr:last-child td { border-bottom:none; }
+.occ-detail-table tr:hover td { background:var(--card-alt); }
+.occ-detail-table tr.hidden-row { display:none; }
+.occ-empty-state { text-align:center; padding:60px 20px; color:var(--text3); }
+.occ-empty-state span { font-size:40px; display:block; margin-bottom:10px; }
+@media(max-width:1000px){
+  .occ-kpis { grid-template-columns:repeat(2,1fr); }
+  .occpage-charts { grid-template-columns:1fr; }
+}
+
+
+
+/* ══════════════════════════════════════════════════
+   MODAL OCORRÊNCIAS (painel analítico)
+══════════════════════════════════════════════════ */
+.occ-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+.occ-modal-section {
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.occ-modal-section h4 {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .7px; color: var(--text3); margin-bottom: 12px;
+}
+.occ-modal-full { grid-column: 1 / -1; }
+.rank-list { display: flex; flex-direction: column; gap: 6px; }
+.rank-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.rank-pos { font-size: 11px; font-weight: 800; color: var(--text3); width: 18px; text-align: center; }
+.rank-name { font-size: 12px; font-weight: 600; color: var(--text); flex: 1; }
+.rank-bar-wrap { width: 80px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.rank-bar-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .5s ease; }
+.rank-count { font-size: 12px; font-weight: 800; color: var(--accent); min-width: 24px; text-align: right; }
+.occ-type-list { display: flex; flex-direction: column; gap: 5px; }
+.occ-type-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: var(--radius-sm);
+  background: var(--surface); border: 1px solid var(--border);
+}
+.occ-type-code {
+  background: var(--accent-bg); color: var(--accent);
+  border: 1px solid #c7d2fe;
+  padding: 2px 7px; border-radius: 20px;
+  font-size: 10px; font-weight: 800; flex-shrink: 0; min-width: 30px; text-align: center;
+}
+.occ-type-desc { font-size: 11px; color: var(--text2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.occ-type-bar-wrap { width: 60px; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.occ-type-bar-fill { height: 100%; border-radius: 3px; background: #7c3aed; }
+.occ-type-count { font-size: 11px; font-weight: 800; color: #7c3aed; min-width: 20px; text-align: right; }
+.modal-wide { max-width: 820px; width: 96%; }
+.modal-wide h2 { font-size: 16px; }
+.modal-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin: 14px 0 0; }
+.modal-tab {
+  padding: 8px 18px; font-size: 12px; font-weight: 600;
+  color: var(--text3); border-bottom: 2px solid transparent;
+  cursor: pointer; transition: all .15s;
+}
+.modal-tab:hover { color: var(--text2); }
+.modal-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.modal-tab-panel { display: none; padding-top: 4px; }
+.modal-tab-panel.active { display: block; }
+.kpi-clickable { cursor: pointer; transition: box-shadow .15s, transform .15s; }
+.kpi-clickable:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.kpi-hint { font-size: 9px; color: var(--text3); margin-top: 4px; letter-spacing: .3px; }
+
+/* ── AVISO PENDENTES ── */
+.pending-alert {
+  position: fixed; inset: 0;
+  background: rgba(15,23,42,.5);
+  z-index: 450; display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+  backdrop-filter: blur(3px);
+}
+.pending-alert.open { opacity: 1; pointer-events: all; }
+.pending-alert-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 28px;
+  width: 90%; max-width: 520px;
+  box-shadow: var(--shadow-lg);
+  transform: scale(.97); transition: transform .2s;
+}
+.pending-alert.open .pending-alert-box { transform: scale(1); }
+.pending-alert-icon { font-size: 32px; margin-bottom: 10px; }
+.pending-alert-box h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; color: #7c3aed; }
+.pending-alert-box p { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 16px; }
+.pending-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; max-height: 200px; overflow-y: auto; }
+.pending-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: var(--radius-sm);
+  background: var(--amber-bg); border: 1px solid var(--amber-bd);
+}
+.pending-item-name { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+.pending-item-date { font-size: 11px; color: var(--text3); }
+.pending-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.late-badge {
+  display: inline-block; font-size: 9px; font-weight: 700;
+  background: var(--accent-bg); color: var(--accent);
+  border: 1px solid #c7d2fe; border-radius: 20px;
+  padding: 1px 6px; margin-left: 4px; vertical-align: middle;
+}
+
+/* ══════════════════════════════════════════════════
+   TELA DE LOGIN
+══════════════════════════════════════════════════ */
+#loginScreen {
+  position: fixed; inset: 0; z-index: 9999;
+  background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #0F172A 100%);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Inter', sans-serif;
+}
+#loginScreen.hidden { display: none; }
+.login-box {
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 28px;
+  padding: 48px;
+  width: 420px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 40px 80px rgba(0,0,0,.5);
+  text-align: center;
+  animation: loginFadeIn .5s ease;
+}
+@keyframes loginFadeIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+.login-logo {
+  width: 72px; height: 72px; border-radius: 22px;
+  background: linear-gradient(135deg, #2563EB, #7C3AED);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 24px;
+  box-shadow: 0 12px 32px rgba(37,99,235,.5);
+  font-size: 32px;
+}
+.login-title {
+  font-size: 26px; font-weight: 800; color: #fff;
+  letter-spacing: -.5px; margin-bottom: 4px;
+}
+.login-subtitle {
+  font-size: 12px; font-weight: 600; color: #7C3AED;
+  text-transform: uppercase; letter-spacing: 2px; margin-bottom: 36px;
+}
+.login-field { position: relative; margin-bottom: 16px; }
+.login-field input {
+  width: 100%; background: rgba(255,255,255,.07);
+  border: 1.5px solid rgba(255,255,255,.12);
+  border-radius: 14px; padding: 14px 18px;
+  color: #fff; font-size: 14px; font-family: 'Inter', sans-serif;
+  outline: none; transition: all .2s;
+}
+.login-field input::placeholder { color: rgba(255,255,255,.35); }
+.login-field input:focus { border-color: #7C3AED; background: rgba(124,58,237,.1); box-shadow: 0 0 0 3px rgba(124,58,237,.2); }
+.login-btn {
+  width: 100%; padding: 15px;
+  background: linear-gradient(135deg, #7C3AED, #2563EB);
+  color: #fff; border: none; border-radius: 14px;
+  font-size: 14px; font-weight: 700; font-family: 'Inter', sans-serif;
+  cursor: pointer; letter-spacing: .5px;
+  transition: all .2s; margin-top: 8px;
+  box-shadow: 0 8px 24px rgba(124,58,237,.45);
+}
+.login-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(124,58,237,.6); }
+.login-error {
+  color: #FCA5A5; font-size: 13px; margin-top: 10px; font-weight: 600;
+  display: none;
+}
+.login-error.show { display: block; }
+.login-brand {
+  margin-top: 36px; padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+}
+.login-brand-logo {
+  background: linear-gradient(135deg, #7C3AED, #2563EB);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  font-size: 20px; font-weight: 900; letter-spacing: -1px;
+}
+.login-brand-info { text-align: left; }
+.login-brand-info .brand-name {
+  font-size: 13px; font-weight: 700; color: rgba(255,255,255,.8);
+}
+.login-brand-info .brand-sub {
+  font-size: 10px; color: rgba(255,255,255,.4); font-weight: 500; letter-spacing: .5px;
+}
+
+/* ══════════════════════════════════════════════════
+   MODAL MOTORISTAS EM OPERAÇÃO
+══════════════════════════════════════════════════ */
+.modal-xl {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 24px; padding: 32px;
+  width: 92%; max-width: 860px; max-height: 88vh;
+  overflow-y: auto;
+  transform: scale(.97); transition: transform .25s ease;
+  box-shadow: 0 20px 60px rgba(0,0,0,.12);
+}
+.overlay.open .modal-xl { transform: scale(1); }
+.modal-xl-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px;
+}
+.modal-xl-header h2 {
+  font-size: 20px; font-weight: 800; color: var(--text); letter-spacing: -.4px;
+}
+.modal-close-btn {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--card-alt); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; cursor: pointer; color: var(--text3);
+  transition: all .2s;
+}
+.modal-close-btn:hover { background: var(--red-bg); color: var(--red); border-color: var(--red-bd); }
+.driver-register-card {
+  background: linear-gradient(135deg, var(--accent-bg), #F5F3FF);
+  border: 1px solid var(--border);
+  border-radius: 20px; padding: 24px; margin-bottom: 24px;
+}
+.driver-register-card h3 {
+  font-size: 13px; font-weight: 700; color: var(--text2); text-transform: uppercase;
+  letter-spacing: .8px; margin-bottom: 16px;
+}
+.driver-register-row {
+  display: flex; gap: 12px; align-items: flex-end;
+}
+.driver-register-field { flex: 1; }
+.driver-register-field label {
+  display: block; font-size: 12px; font-weight: 700; color: var(--text2);
+  margin-bottom: 6px; text-transform: uppercase; letter-spacing: .5px;
+}
+.driver-register-field input {
+  width: 100%; background: white; border: 1.5px solid var(--border);
+  border-radius: 12px; padding: 11px 14px; font-size: 13px; font-weight: 600;
+  color: var(--text); outline: none; font-family: 'Inter', sans-serif;
+  transition: all .2s;
+}
+.driver-register-field input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.drivers-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.driver-card-item {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 18px; padding: 20px;
+  transition: all .25s; cursor: default;
+  box-shadow: var(--shadow);
+}
+.driver-card-item:hover { box-shadow: var(--shadow-md); border-color: var(--accent); transform: translateY(-3px); }
+.driver-card-avatar {
+  width: 48px; height: 48px; border-radius: 14px;
+  background: linear-gradient(135deg, #2563EB, #7C3AED);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: white;
+  margin-bottom: 14px;
+}
+.driver-card-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.driver-card-plate {
+  font-size: 11px; font-weight: 700; color: var(--text3);
+  background: var(--card-alt); border: 1px solid var(--border);
+  padding: 2px 9px; border-radius: 8px; display: inline-block;
+  margin-bottom: 14px;
+}
+.driver-card-stats { display: flex; gap: 8px; }
+.driver-stat {
+  flex: 1; background: var(--card-alt); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px; text-align: center;
+}
+.driver-stat-val { font-size: 18px; font-weight: 800; color: var(--text); }
+.driver-stat-label { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+.driver-card-remove {
+  margin-top: 12px; width: 100%; padding: 7px;
+  background: var(--red-bg); color: var(--red); border: 1px solid var(--red-bd);
+  border-radius: 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+  transition: all .2s;
+}
+.driver-card-remove:hover { background: #fee2e2; }
+
+/* ══════════════════════════════════════════════════
+   MODAL RETORNARAM
+══════════════════════════════════════════════════ */
+.returned-kpis {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+  margin-bottom: 24px;
+}
+.returned-kpi {
+  background: var(--card-alt); border: 1px solid var(--border);
+  border-radius: 18px; padding: 18px; text-align: center;
+}
+.returned-kpi-val { font-size: 32px; font-weight: 800; color: var(--text); }
+.returned-kpi-label { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .7px; margin-top: 4px; }
+.returned-list { display: flex; flex-direction: column; gap: 8px; }
+.returned-item {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px 18px;
+  transition: all .2s;
+}
+.returned-item:hover { box-shadow: var(--shadow-md); transform: translateX(4px); }
+.returned-item-avatar {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: linear-gradient(135deg, #22C55E, #16A34A);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 800; color: white; flex-shrink: 0;
+}
+.returned-item-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.returned-item-plate {
+  font-size: 11px; color: var(--text3); font-weight: 600;
+  background: var(--card-alt); padding: 2px 8px; border-radius: 7px; border: 1px solid var(--border);
+}
+.returned-item-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.returned-item-occ {
+  background: var(--pink-bg); color: var(--pink); border: 1px solid var(--pink-bd);
+  font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 20px;
+}
+.returned-item-occ.none { background: var(--green-bg); color: #16A34A; border-color: var(--green-bd); }
+.returned-empty { text-align: center; padding: 48px 24px; color: var(--text3); }
+.returned-empty .ri { font-size: 48px; margin-bottom: 12px; }
+
+/* ══════════════════════════════════════════════════
+   FOOTER M7S
+══════════════════════════════════════════════════ */
+.site-footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 20px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 40px;
+}
+.footer-brand {
+  display: flex; align-items: center; gap: 12px;
+}
+.footer-m7s-logo {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: linear-gradient(135deg, #7C3AED, #2563EB);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 900; color: white; letter-spacing: -1px;
+}
+.footer-brand-text .footer-dev-label {
+  font-size: 10px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+}
+.footer-brand-text .footer-company {
+  font-size: 13px; font-weight: 800; color: var(--text);
+}
+.footer-brand-text .footer-tagline {
+  font-size: 10px; color: var(--text3); font-weight: 500;
+  font-style: italic;
+}
+.footer-right {
+  font-size: 11px; color: var(--text3); text-align: right; font-weight: 500;
+}
+
+/* ══════════════════════════════════════════════════
+   MELHORIAS GERAIS PREMIUM
+══════════════════════════════════════════════════ */
+.kpi-clickable { cursor: pointer; }
+.kpi-clickable:hover { box-shadow: 0 12px 30px rgba(0,0,0,.10) !important; transform: translateY(-6px) !important; }
+.kpi-hint { font-size: 10px; color: var(--text3); margin-top: 5px; letter-spacing: .3px; font-weight: 500; }
+.hist-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 22px;
+  cursor: pointer; transition: all .25s ease;
+  box-shadow: var(--shadow);
+}
+.hist-card:hover { box-shadow: var(--shadow-lg); border-color: var(--accent); transform: translateY(-4px); }
+.import-zone {
+  border: 2px dashed var(--border);
+  border-radius: 24px;
+  background: var(--surface);
+  padding: 64px 40px;
+  text-align: center;
+  transition: all .2s;
+  cursor: pointer;
+}
+.import-zone:hover, .import-zone.drag {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+@media (max-width:1000px) {
+  main { padding: 16px; }
+  .kpis { grid-template-columns: repeat(2,1fr); }
+  .charts-row { grid-template-columns: 1fr; }
+  .occ-page-grid { grid-template-columns: 1fr; }
+}
+@media (max-width:640px) {
+  header, .nav-tabs { padding-left: 16px; padding-right: 16px; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .toolbar { flex-direction: column; align-items: flex-start; }
+}
+
+body.dark-mode {
+  --bg:        #0F172A;
+  --surface:   #1E293B;
+  --card:      #1E293B;
+  --card-alt:  #0F172A;
+  --border:    #334155;
+  --border2:   #475569;
+  --text:      #F1F5F9;
+  --text2:     #94A3B8;
+  --text3:     #475569;
+  --shadow:    0 1px 3px rgba(0,0,0,.3);
+  --shadow-md: 0 4px 20px rgba(0,0,0,.4);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,.5);
+  --accent-bg: #1e3a5f;
+  --green-bg:  #052e16;
+  --green-bd:  #166534;
+  --amber-bg:  #1c1400;
+  --amber-bd:  #854d0e;
+  --red-bg:    #1c0505;
+  --red-bd:    #991b1b;
+  --pink-bg:   #1f0d16;
+  --pink-bd:   #9d174d;
+}
+body.dark-mode .login-field input { color:#fff !important; }
+body.dark-mode select, body.dark-mode input { color:var(--text); background:var(--card-alt); }
+body.dark-mode .sel-status { color:var(--text2); }
+body.dark-mode .sel-status.st-ret  { color:var(--green); }
+body.dark-mode .sel-status.st-nret { color:var(--red); }
+
+#darkModeToggle {
+  position: fixed; bottom: 20px; left: 20px; z-index: 999;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 24px; padding: 8px 16px;
+  font-size: 12px; font-weight: 700; color: var(--text2);
+  cursor: pointer; display: flex; align-items: center; gap: 7px;
+  box-shadow: var(--shadow-md); transition: all .2s;
+}
+#darkModeToggle:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); }
+
+/* ══════════════════════════════════════════════════
+   RANKING / PROD TABLE HIGHLIGHTS
+══════════════════════════════════════════════════ */
+.rank-top3 td   { background: #f0fdf4 !important; }
+.rank-bot3 td   { background: #fef2f2 !important; }
+body.dark-mode .rank-top3 td { background: #052e16 !important; }
+body.dark-mode .rank-bot3 td { background: #1c0505 !important; }
+.prod-bar-wrap  { width:80px; height:7px; background:var(--border); border-radius:4px; display:inline-block; vertical-align:middle; overflow:hidden; }
+.prod-bar-fill  { height:100%; border-radius:4px; background:linear-gradient(90deg,#2563EB,#22C55E); transition:width .6s ease; }
+
+/* ══════════════════════════════════════════════════
+   CADASTRO MOTORISTAS — SORTABLE COLS
+══════════════════════════════════════════════════ */
+th[data-sort] { cursor:pointer; user-select:none; }
+th[data-sort]:hover { color:var(--accent); }
+th[data-sort].sort-asc::after  { content:' ↑'; color:var(--accent); }
+th[data-sort].sort-desc::after { content:' ↓'; color:var(--accent); }
+
+@media(max-width:1000px) {
+  #page-ranking main, #page-conclusao main, #page-pendentes main,
+  #page-dashboard_mgr main, #page-cadmotoristas main, #page-exportacao main {
+    padding:16px;
+  }
+}
+
+</style>
+</head>
+<body>
+
+<!-- TELA DE LOGIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+        <path d="M1 3h15v13H1V3z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M16 8h4l3 3v5h-7V8z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="5.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+        <circle cx="18.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+      </svg>
+    </div>
+    <div class="login-title">Portal de Conferência</div>
+    <div class="login-subtitle">Controle de Entregas</div>
+    <div class="login-field">
+      <input type="text" id="loginUser" placeholder="Usuário" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <input type="password" id="loginPass" placeholder="Senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="login-error" id="loginError">⚠️ Usuário ou senha incorretos.</div>
+    <button class="login-btn" onclick="doLogin()">ENTRAR →</button>
+    <div class="login-brand">
+      <div class="login-brand-logo">M7S</div>
+      <div class="login-brand-info">
+        <div class="brand-name">Mindset7 Studio</div>
+        <div class="brand-sub">CRIATIVIDADE QUE POSICIONA.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AUTOSAVE INDICATOR -->
+<div id="autosaveBar"><div id="autosaveProgress"></div></div>
+<div id="autosaveBadge">
+  <span class="as-dot" id="asDot"></span>
+  <span id="asText">Salvo automaticamente</span>
+</div>
+<div id="syncBadge">
+  <span class="sync-dot" id="syncDot"></span>
+  <span id="syncText">☁️ Conectado</span>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1 3h15v13H1V3z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M16 8h4l3 3v5h-7V8z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="5.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+        <circle cx="18.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Portal de Conferência</h1>
+      <p>Controle diário de entregas</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="date-pill" id="datePill"></div>
+    <button class="btn-icon" title="Novo dia" onclick="confirmNewDay()">＋</button>
+    <button class="btn-icon" title="Histórico" onclick="showPage('history')">📋</button>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="nav-tabs">
+  <div class="tab active" id="tab-today"     onclick="showPage('today')">📅 Conferência do Dia</div>
+  <div class="tab"        id="tab-history"   onclick="showPage('history')">🗂️ Histórico</div>
+  <div class="tab"        id="tab-ranking"   onclick="showPage('ranking')">🏆 Ranking</div>
+  <div class="tab"        id="tab-conclusao" onclick="showPage('conclusao')">🎯 Conclusão</div>
+  <div class="tab"        id="tab-pendentes" onclick="showPage('pendentes')">⏳ Pendentes</div>
+  <div class="tab"        id="tab-dashboard" onclick="showPage('dashboard_mgr')">📈 Dashboard</div>
+  <div class="tab"        id="tab-cadmotoristas" onclick="showPage('cadmotoristas')">👤 Motoristas</div>
+  <div class="tab"        id="tab-exportacao" onclick="showPage('exportacao')">⬇️ Exportação</div>
+  <div class="tab"        id="tab-occreport" onclick="showPage('occreport')">📊 Ocorrências</div>
+  <div class="tab"        id="tab-occtypes"  onclick="showPage('occtypes')">⚙️ Tipos de Ocorrência</div>
+</nav>
+
+<!-- ═══ TODAY PAGE ═══ -->
+<div id="page-today" class="page active">
+<main>
+
+  <!-- IMPORT -->
+  <div id="importSection">
+    <div class="import-zone" id="importZone"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="handleDrop(event)">
+      <span class="iz-icon">📂</span>
+      <h2>Importe a planilha do dia</h2>
+      <p>Clique no botão abaixo para selecionar o arquivo <strong>.xlsx</strong> ou arraste e solte aqui</p>
+      <button class="btn btn-primary btn-lg" onclick="document.getElementById('fileInput').click()">
+        📂 Selecionar arquivo Excel
+      </button>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="loadFile(this.files[0])">
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard" style="display:none">
+
+    <!-- new conference button -->
+    <div class="new-conf-bar">
+      <button class="btn btn-outline btn-sm" onclick="confirmNewDay()">
+        🔄 Iniciar nova conferência de entregas
+      </button>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpis" id="kpiStrip"></div>
+
+    <!-- CHARTS -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Prestação de Contas</h3>
+        <div class="chart-wrap"><canvas id="cPrest"></canvas></div>
+        <div class="legend" id="legPrest"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Ocorrências</h3>
+        <div class="chart-wrap"><canvas id="cOcorr"></canvas></div>
+        <div class="legend" id="legOcorr"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Tipos de Ocorrência</h3>
+        <div class="occ-bars" id="occBarsChart" style="margin-top:8px;min-height:140px"></div>
+      </div>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <h3 id="tableTitle">Motoristas do dia</h3>
+        <div class="search-box">
+          <span>🔍</span>
+          <input type="text" id="searchInput" placeholder="Buscar motorista..." oninput="filterTable()">
+        </div>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn btn-amber btn-sm" onclick="openModal('modalViagemAdicional')">+ Viagem Adicional</button>
+        <button class="btn btn-outline btn-sm" onclick="exportXLSX()">⬇️ Exportar Excel</button>
+        <button class="btn btn-green btn-sm"   onclick="saveDay()">💾 Salvar conferência</button>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-wrap">
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Motorista</th>
+              <th>Placa</th>
+              <th>CTEs</th>
+              <th>Status Prestação</th>
+              <th>Tipo de Ocorrência</th>
+              <th>% Ocorr.</th>
+              <th>Observações</th>
+            </tr>
+          </thead>
+          <tbody id="mainTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /dashboard -->
+</main>
+</div>
+
+<!-- ═══ HISTORY PAGE ═══ -->
+<div id="page-history" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>Conferências Salvas</h2>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="exportAllXLSX()">⬇️ Exportar tudo</button>
+    </div>
+  </div>
+  <div class="hist-grid" id="histGrid"></div>
+</main>
+</div>
+
+<!-- ═══ OCCURRENCE TYPES PAGE ═══ -->
+<div id="page-occtypes" class="page">
+<main>
+  <div class="occ-page-grid">
+
+    <!-- ADD / IMPORT -->
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="occ-panel">
+        <div class="occ-panel-head">
+          <h3>Adicionar tipo de ocorrência</h3>
+        </div>
+        <div class="occ-panel-body">
+          <div class="form-row">
+            <input class="inp-code" id="occCode" type="text" maxlength="6" placeholder="Cód.">
+            <input class="inp-desc" id="occDesc" type="text" placeholder="Descrição (ex: Área de risco)" onkeydown="if(event.key==='Enter')addOccType()">
+            <button class="btn btn-primary" onclick="addOccType()">Adicionar</button>
+          </div>
+          <p style="font-size:12px;color:var(--text3)">Exemplos de código: 6 (Cliente ausente), 20 (Sem tempo hábil), 76 (Área de risco)</p>
+        </div>
+      </div>
+
+      <div class="occ-panel">
+        <div class="occ-panel-head">
+          <h3>Importar via planilha Excel</h3>
+        </div>
+        <div class="occ-panel-body">
+          <div class="occ-import-zone" onclick="document.getElementById('occFileInput').click()"
+            ondragover="event.preventDefault()" ondrop="handleOccDrop(event)">
+            <div style="font-size:28px;margin-bottom:8px">📊</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text2)">Importar lista de ocorrências</div>
+            <p class="occ-hint">Planilha com colunas <strong>Código</strong> e <strong>Descrição</strong></p>
+          </div>
+          <input type="file" id="occFileInput" accept=".xlsx,.xls" style="display:none" onchange="loadOccFile(this.files[0])">
+        </div>
+      </div>
+    </div>
+
+    <!-- LIST -->
+    <div class="occ-panel">
+      <div class="occ-panel-head">
+        <h3>Tipos cadastrados</h3>
+        <span style="font-size:12px;color:var(--text3)" id="occCount">0 tipos</span>
+      </div>
+      <div class="occ-panel-body" style="padding:10px">
+        <div class="occ-list" id="occList"></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+</div>
+
+
+<!-- ═══ OCCURRENCES REPORT PAGE ═══ -->
+<div id="page-occreport" class="page">
+<main>
+
+  <!-- TOOLBAR -->
+  <div class="occpage-toolbar">
+    <h2>📊 Painel de Ocorrências</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="occpage-filters">
+        <select id="occFilterPeriod" onchange="renderOccReport()">
+          <option value="all">Todo o histórico</option>
+          <option value="month">Mês atual</option>
+          <option value="today">Apenas hoje</option>
+        </select>
+        <input type="text" id="occFilterDriver" placeholder="🔍 Filtrar motorista..." oninput="filterOccTable()" style="min-width:180px">
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="exportOccXLSX()">⬇️ Exportar Ocorrências</button>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="occ-kpis" id="occKpis"></div>
+
+  <!-- GRÁFICOS TOPO -->
+  <div class="occpage-charts">
+    <div class="occpage-chart-card">
+      <h3>Top tipos de ocorrência</h3>
+      <div id="occTypeChart"></div>
+    </div>
+    <div class="occpage-chart-card">
+      <h3>Motoristas com mais ocorrências</h3>
+      <div id="occDriverChart"></div>
+    </div>
+    <div class="occpage-chart-card">
+      <h3>Linha do tempo (por dia)</h3>
+      <div class="timeline-bars" id="occTimeline"></div>
+    </div>
+  </div>
+
+  <!-- CARDS POR MOTORISTA -->
+  <div class="occpage-cards-section">
+    <h3>Resumo por motorista</h3>
+    <div class="occpage-cards" id="occDriverCards"></div>
+  </div>
+
+  <!-- TABELA DETALHADA -->
+  <div class="occpage-table-section">
+    <div class="occpage-table-head">
+      <h3>Detalhamento completo</h3>
+      <span id="occTableCount" style="font-size:12px;color:var(--text3)"></span>
+    </div>
+    <div class="table-wrap">
+      <div style="overflow-x:auto">
+        <table class="occ-detail-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Motorista</th>
+              <th>Placa</th>
+              <th>Cód.</th>
+              <th>Descrição</th>
+              <th>Status Prestação</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody id="occDetailTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- MODAL NEW DAY -->
+<div class="overlay" id="modalNewDay">
+  <div class="modal">
+    <h2>Iniciar nova conferência de entregas?</h2>
+    <p>Os dados atuais serão descartados da tela (certifique-se de ter salvo). Deseja continuar?</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modalNewDay')">Cancelar</button>
+      <button class="btn btn-primary" onclick="startNewDay()">Continuar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DELETE HISTORY -->
+<div class="overlay" id="modalDelHist">
+  <div class="modal">
+    <h2>Excluir conferência?</h2>
+    <p>Esta ação não pode ser desfeita. Deseja excluir este registro do histórico?</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modalDelHist')">Cancelar</button>
+      <button class="btn btn-red" onclick="confirmDeleteHist()">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ANALÍTICO DE OCORRÊNCIAS -->
+<div class="overlay" id="modalOccAnalytics">
+  <div class="modal modal-wide">
+    <h2>📊 Análise de Ocorrências</h2>
+    <div class="modal-tabs">
+      <div class="modal-tab active" id="mtab-today" onclick="switchModalTab('today')">Hoje</div>
+      <div class="modal-tab" id="mtab-month" onclick="switchModalTab('month')">Visão do Mês</div>
+    </div>
+    <div class="modal-tab-panel active" id="mpanel-today">
+      <div class="occ-modal-grid" id="occAnalyticsToday"></div>
+    </div>
+    <div class="modal-tab-panel" id="mpanel-month">
+      <div class="occ-modal-grid" id="occAnalyticsMonth"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-outline" onclick="closeModal('modalOccAnalytics')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ALERTA PENDENTES DO DIA ANTERIOR -->
+<div class="pending-alert" id="pendingAlert">
+  <div class="pending-alert-box">
+    <div class="pending-alert-icon">⚠️</div>
+    <h2>Motoristas pendentes do dia anterior</h2>
+    <p>Os seguintes motoristas saíram ontem e ainda não prestaram conta. Deseja abrir o registro do dia anterior para atualizá-los?</p>
+    <div class="pending-list" id="pendingList"></div>
+    <div class="pending-actions">
+      <button class="btn btn-outline" onclick="closePendingAlert()">Agora não</button>
+      <button class="btn btn-primary" onclick="openPendingDay()">📋 Abrir dia anterior</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL MOTORISTAS EM OPERAÇÃO -->
+<div class="overlay" id="modalDrivers">
+  <div class="modal-xl">
+    <div class="modal-xl-header">
+      <h2>🚚 Motoristas em Operação</h2>
+      <button class="modal-close-btn" onclick="closeModal('modalDrivers')">✕</button>
+    </div>
+    <!-- Cadastro -->
+    <div class="driver-register-card">
+      <h3>➕ Cadastrar Novo Motorista</h3>
+      <div class="driver-register-row">
+        <div class="driver-register-field">
+          <label>Nome Completo</label>
+          <input type="text" id="drvRegName" placeholder="Ex: João da Silva">
+        </div>
+        <div class="driver-register-field" style="max-width:160px">
+          <label>Placa do Veículo</label>
+          <input type="text" id="drvRegPlate" placeholder="ABC-1234" maxlength="8">
+        </div>
+        <button class="btn btn-primary" onclick="registerDriver()" style="margin-bottom:1px">Cadastrar</button>
+      </div>
+    </div>
+    <!-- Lista -->
+    <div id="driversGridContainer">
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px">
+        Motoristas Cadastrados
+      </div>
+      <div class="drivers-grid" id="driversGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RETORNARAM -->
+<div class="overlay" id="modalReturned">
+  <div class="modal-xl">
+    <div class="modal-xl-header">
+      <h2>↩️ Motoristas que Retornaram</h2>
+      <button class="modal-close-btn" onclick="closeModal('modalReturned')">✕</button>
+    </div>
+    <div class="returned-kpis" id="returnedKpis"></div>
+    <div id="returnedList"></div>
+  </div>
+</div>
+
+<!-- ═══ RANKING PAGE ═══ -->
+<div id="page-ranking" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>🏆 Ranking de Produtividade</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:12px;color:var(--text3)" id="rankingSubtitle">Baseado na conferência atual</span>
+      <button class="btn btn-outline btn-sm" onclick="exportRankingXLSX()">⬇️ Exportar Ranking</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table id="rankingTable">
+        <thead>
+          <tr>
+            <th>Posição</th>
+            <th onclick="sortRanking('nome')" style="cursor:pointer">Motorista ↕</th>
+            <th onclick="sortRanking('placa')" style="cursor:pointer">Placa ↕</th>
+            <th onclick="sortRanking('ctes')" style="cursor:pointer">CTEs ↕</th>
+            <th>Realizadas</th>
+            <th onclick="sortRanking('prod')" style="cursor:pointer">Produtividade ↕</th>
+          </tr>
+        </thead>
+        <tbody id="rankingBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ CONCLUSÃO PAGE ═══ -->
+<div id="page-conclusao" class="page">
+<main>
+  <div class="hist-toolbar"><h2>🎯 Conclusão da Operação</h2></div>
+  <div class="kpis" id="conclusaoKpis" style="grid-template-columns:repeat(4,1fr)"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px">
+    <div class="chart-card">
+      <h3>Distribuição Realizadas / Pendentes</h3>
+      <div class="chart-wrap"><canvas id="cConclusao"></canvas></div>
+      <div class="legend" id="legConclusao"></div>
+    </div>
+    <div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;">
+      <h3>Progresso Geral da Operação</h3>
+      <div style="margin:20px 0">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600;color:var(--text2)">Entregas Realizadas</span>
+          <span style="font-size:13px;font-weight:800;color:var(--accent)" id="conclusaoProgressPct">0%</span>
+        </div>
+        <div style="height:18px;background:var(--border);border-radius:9px;overflow:hidden">
+          <div id="conclusaoProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#2563EB,#22C55E);border-radius:9px;transition:width 0.8s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px">
+          <span style="font-size:11px;color:var(--text3)" id="conclusaoProgressDetail">0 de 0 CTEs</span>
+          <span style="font-size:11px;color:var(--text3)" id="conclusaoPendPct">0% pendente</span>
+        </div>
+      </div>
+      <div style="background:var(--card-alt);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px">Legenda</div>
+        <div style="display:flex;flex-direction:column;gap:7px" id="conclusaoLegend"></div>
+      </div>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ PENDENTES PAGE ═══ -->
+<div id="page-pendentes" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>⏳ Motoristas Pendentes</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:13px;font-weight:700;color:var(--red)" id="pendentesResumo"></span>
+      <button class="btn btn-outline btn-sm" onclick="exportPendentesXLSX()">⬇️ Exportar Pendentes</button>
+    </div>
+  </div>
+  <div id="pendentesTotal" style="display:flex;gap:14px;margin-bottom:20px"></div>
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Motorista</th>
+            <th>Placa</th>
+            <th>CTEs</th>
+            <th>Realizadas</th>
+            <th>Pendentes</th>
+          </tr>
+        </thead>
+        <tbody id="pendentesBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ DASHBOARD GERENCIAL PAGE ═══ -->
+<div id="page-dashboard_mgr" class="page">
+<main>
+  <div class="hist-toolbar"><h2>📈 Dashboard Gerencial</h2></div>
+  <div class="kpis" id="mgrKpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
+    <div class="chart-card">
+      <h3>Distribuição de CTEs por Motorista (Top 8)</h3>
+      <div class="chart-wrap" style="height:220px"><canvas id="cMgrPie"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Top 10 Motoristas por Produtividade</h3>
+      <div class="chart-wrap" style="height:220px"><canvas id="cMgrBar"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-card" style="margin-bottom:18px">
+    <h3>Entregas x Pendências por Motorista (Top 15)</h3>
+    <div class="chart-wrap" style="height:240px"><canvas id="cMgrStacked"></canvas></div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ CADASTRO MOTORISTAS PAGE ═══ -->
+<div id="page-cadmotoristas" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>👤 Cadastro de Motoristas</h2>
+    <div class="search-box" style="min-width:240px">
+      <span>🔍</span>
+      <input type="text" id="cadMotoristasSearch" placeholder="Pesquisar motorista..." oninput="renderCadMotoristas()">
+    </div>
+  </div>
+  <!-- Formulário de cadastro -->
+  <div class="driver-register-card" style="margin-bottom:24px">
+    <h3 id="cadFormTitle">➕ Cadastrar Novo Motorista</h3>
+    <input type="hidden" id="cadEditId">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;align-items:flex-end">
+      <div class="driver-register-field">
+        <label>Nome Completo *</label>
+        <input type="text" id="cadNome" placeholder="Ex: João da Silva">
+      </div>
+      <div class="driver-register-field">
+        <label>CPF *</label>
+        <input type="text" id="cadCpf" placeholder="000.000.000-00" maxlength="14" oninput="maskCPF(this)">
+      </div>
+      <div class="driver-register-field">
+        <label>Placa</label>
+        <input type="text" id="cadPlaca" placeholder="ABC-1234" maxlength="8">
+      </div>
+      <div class="driver-register-field">
+        <label>Celular</label>
+        <input type="text" id="cadCelular" placeholder="(00) 90000-0000" maxlength="16" oninput="maskPhone(this)">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="saveCadMotorista()">Salvar</button>
+        <button class="btn btn-outline" onclick="clearCadForm()" id="cadCancelBtn" style="display:none">Cancelar</button>
+      </div>
+    </div>
+    <div id="cadFormError" style="margin-top:10px;font-size:12px;color:var(--red);display:none"></div>
+  </div>
+  <!-- Tabela de motoristas -->
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nome</th>
+            <th>CPF</th>
+            <th>Placa</th>
+            <th>Celular</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="cadMotoristasBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ EXPORTAÇÃO PAGE ═══ -->
+<div id="page-exportacao" class="page">
+<main>
+  <div class="hist-toolbar"><h2>⬇️ Central de Exportação</h2></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">📋</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Operação</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Motorista, Placa, CTEs, Realizadas, Auditadas e Produtividade</p>
+      <button class="btn btn-primary btn-lg" onclick="exportOperacaoXLSX()">⬇️ Exportar Operação</button>
+    </div>
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">🏆</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Ranking</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Posição, Motorista e Produtividade de todos os motoristas</p>
+      <button class="btn btn-primary btn-lg" onclick="exportRankingXLSX()">⬇️ Exportar Ranking</button>
+    </div>
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">⏳</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Pendências</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Motorista, Placa e quantidade de CTEs pendentes</p>
+      <button class="btn btn-primary btn-lg" onclick="exportPendentesXLSX()">⬇️ Exportar Pendentes</button>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">📊</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Ocorrências</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Relatório completo de ocorrências com estatísticas</p>
+      <button class="btn btn-primary btn-lg" onclick="exportOccXLSX()">⬇️ Exportar Ocorrências</button>
+    </div>
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">🗂️</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Histórico Completo</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Todas as conferências salvas em uma planilha</p>
+      <button class="btn btn-primary btn-lg" onclick="exportAllXLSX()">⬇️ Exportar Histórico</button>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- MODAL VIAGEM ADICIONAL -->
+<div class="overlay" id="modalViagemAdicional">
+  <div class="modal">
+    <h2>➕ Viagem Adicional</h2>
+    <p>Adicione uma viagem extra à operação atual sem afetar os registros existentes.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <input type="text" id="vaMotorista" placeholder="Nome do Motorista" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px;font-family:inherit;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      <input type="text" id="vaPlaca" placeholder="Placa (opcional)" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px;font-family:inherit;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      <input type="number" id="vaCtes" placeholder="Quantidade de CTEs" min="1" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px;font-family:inherit;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modalViagemAdicional')">Cancelar</button>
+      <button class="btn btn-green" onclick="adicionarViagem()">✅ Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- DARK MODE TOGGLE -->
+<button id="darkModeToggle" onclick="toggleDarkMode()">
+  <span id="darkModeIcon">🌙</span>
+  <span id="darkModeLabel">Dark Mode</span>
+</button>
+
+<!-- FOOTER M7S -->
+<footer class="site-footer">
+  <div class="footer-brand">
+    <div class="footer-m7s-logo">M7S</div>
+    <div class="footer-brand-text">
+      <div class="footer-dev-label">Desenvolvido por</div>
+      <div class="footer-company">Mindset7 Studio</div>
+      <div class="footer-tagline">Criatividade que posiciona.</div>
+    </div>
+  </div>
+  <div class="footer-right">
+    Portal de Conferência de Entregas<br>
+    <span style="color:var(--text3)">v1.1.0 · © 2026 Mindset7 Studio</span>
+  </div>
+</footer>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════ */
+let rows       = [];
+let occTypes   = [];   // {code, desc}
+let chartPrest = null;
+let chartOcorr = null;
+let deleteHistKey = null;
+let autosaveTimer = null;
+let lastSavedHash = '';
+
+const DB_KEY  = 'conf_entregas_db_v2';
+const OCC_KEY = 'conf_entregas_occ_v2';
+const AS_KEY  = 'conf_entregas_autosave_v2';
+
+/* ══════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  updateDatePill();
+  loadOccTypes();
+  restoreAutosave();
+  Chart.defaults.color = '#8a94b0';
+  Chart.defaults.font.family = "Arial, Helvetica, system-ui, sans-serif";
+
+  // show sync badge on load
+  const syncBadge = document.getElementById('syncBadge');
+  if(syncBadge) { syncBadge.classList.add('show'); }
+
+  // verificar pendentes do dia anterior após 1.5s (Firebase já conectou)
+  setTimeout(checkPendingYesterday, 1500);
+});
+
+function updateDatePill() {
+  const d = new Date();
+  document.getElementById('datePill').textContent =
+    d.toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit', month:'short', year:'numeric'});
+}
+
+/* ══════════════════════════════════════════════════════
+   PAGE NAVIGATION
+══════════════════════════════════════════════════════ */
+function showPage(name) {
+  const allPages = ['today','history','occreport','occtypes','ranking','conclusao','pendentes','dashboard_mgr','cadmotoristas','exportacao'];
+  allPages.forEach(p => {
+    const pg = document.getElementById('page-'+p);
+    const tb = document.getElementById('tab-'+p);
+    if(pg) pg.classList.toggle('active', p===name);
+    if(tb) tb.classList.toggle('active', p===name);
+  });
+  if(name==='history')        renderHistory();
+  if(name==='occtypes')       renderOccList();
+  if(name==='occreport')      renderOccReport();
+  if(name==='ranking')        renderRanking();
+  if(name==='conclusao')      renderConclusao();
+  if(name==='pendentes')      renderPendentes();
+  if(name==='dashboard_mgr')  renderMgrDashboard();
+  if(name==='cadmotoristas')  renderCadMotoristas();
+}
+
+/* ══════════════════════════════════════════════════════
+   FILE IMPORT
+══════════════════════════════════════════════════════ */
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('importZone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if(f) loadFile(f);
+}
+
+function loadFile(file) {
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, {type:'array'});
+      const sn   = wb.SheetNames.find(n => n.toUpperCase().includes('CONFER')) || wb.SheetNames[0];
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[sn], {defval:''});
+      if(!data.length) { toast('Planilha vazia ou formato não reconhecido.','t-red'); return; }
+      parseRows(data);
+    } catch(err) {
+      toast('Erro ao ler o arquivo.','t-red');
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function norm(k) {
+  return k.toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]/g,' ').trim();
+}
+function findCol(obj, ...hints) {
+  const keys = Object.keys(obj);
+  for(const h of hints) {
+    const f = keys.find(k => norm(k).includes(h));
+    if(f) return f;
+  }
+  return null;
+}
+
+function parseRows(data) {
+  const s = data[0];
+  const cMotor = findCol(s,'motorista','driver','nome');
+  const cPlaca = findCol(s,'placa','veiculo');
+  const cCTEs  = findCol(s,'qtd','cte','entrega','quantidade');
+  const cReal  = findCol(s,'realiz','conclu','efetu','entregue');
+  const cAudit = findCol(s,'audit');
+  const cStat  = findCol(s,'status','prestacao','prest');
+  const cOcc   = findCol(s,'ocorr','tipo','cod');
+  const cObs   = findCol(s,'obs','observ');
+
+  if(!cMotor) { toast('Coluna "Motorista" não encontrada.','t-red'); return; }
+
+  rows = data.map((r,i) => ({
+    id:        i,
+    nome:      (r[cMotor]||'').toString().trim(),
+    placa:     cPlaca ? (r[cPlaca]||'').toString().trim() : '',
+    ctes:      cCTEs  ? (parseInt(r[cCTEs])||0) : 0,
+    realizadas: cReal ? (parseInt(r[cReal])||0) : 0,
+    auditadas:  cAudit ? (parseInt(r[cAudit])||0) : 0,
+    status:    cStat  ? (r[cStat]||'').toString().trim() : '',
+    occCodes:  cOcc   ? (r[cOcc]||'').toString().trim().split(',').map(s=>s.trim()).filter(Boolean) : [],
+    obs:       cObs   ? (r[cObs]||'').toString().trim() : '',
+  })).filter(r => r.nome && r.nome.toUpperCase() !== 'MOTORISTA');
+
+  if(!rows.length) { toast('Nenhum motorista encontrado.','t-red'); return; }
+
+  document.getElementById('importSection').style.display = 'none';
+  document.getElementById('dashboard').style.display     = 'block';
+  renderDashboard();
+  scheduleAutosave(true);
+  toast(`✅ ${rows.length} motoristas carregados!`, 't-green');
+}
+
+/* ══════════════════════════════════════════════════════
+   DASHBOARD
+══════════════════════════════════════════════════════ */
+function calcStats() {
+  const motoristas = rows.length;
+  const totalCTEs  = rows.reduce((s,r) => s + (r.ctes||0), 0);
+  const retornou   = rows.filter(r => r.status === 'Retornou').length;
+  const naoRet     = rows.filter(r => r.status === 'Não Retornou').length;
+  const semMarca   = rows.filter(r => !r.status).length;
+  const comOcorr   = rows.filter(r => r.occCodes && r.occCodes.length > 0).length;
+  const pctOcorr   = motoristas > 0 ? ((comOcorr/motoristas)*100).toFixed(1) : '0.0';
+  // realizadas: usa coluna explícita ou status Retornou como proxy
+  const totalRealizadas = rows.reduce((s,r) => {
+    if(r.realizadas > 0) return s + r.realizadas;
+    return s + (r.status === 'Retornou' ? (r.ctes||0) : 0);
+  }, 0);
+  const totalAuditadas = rows.reduce((s,r) => s + (r.auditadas||0), 0);
+
+  // occurrence type breakdown — count each code across all drivers
+  const occMap = {};
+  rows.forEach(r => {
+    (r.occCodes||[]).forEach(code => {
+      if(!code) return;
+      occMap[code] = (occMap[code]||0) + 1;
+    });
+  });
+
+  return {motoristas,totalCTEs,totalRealizadas,totalAuditadas,retornou,naoRet,semMarca,comOcorr,pctOcorr,occMap};
+}
+
+function renderDashboard() {
+  renderKPIs();
+  renderTable();
+  renderCharts();
+  document.getElementById('tableTitle').textContent =
+    `Motoristas do dia (${rows.length})`;
+}
+
+function renderKPIs() {
+  const s = calcStats();
+  const retPct = s.motoristas > 0 ? ((s.retornou/s.motoristas)*100).toFixed(0) : 0;
+  document.getElementById('kpiStrip').innerHTML = `
+    <div class="kpi c-blue kpi-clickable" onclick="openDriversModal()" style="cursor:pointer">
+      <div class="kpi-accent"></div>
+      <div class="kpi-icon">🚚</div>
+      <div class="kpi-label">Motoristas em Operação</div>
+      <div class="kpi-value">${s.motoristas}</div>
+      <div class="kpi-sub">hoje na rua</div>
+      <div class="kpi-trend">↑ Ver detalhes</div>
+      <div class="kpi-hint">🔍 clique para ver motoristas</div>
+    </div>
+    <div class="kpi c-green">
+      <div class="kpi-accent"></div>
+      <div class="kpi-icon">📦</div>
+      <div class="kpi-label">Total de CTEs</div>
+      <div class="kpi-value">${s.totalCTEs}</div>
+      <div class="kpi-sub">entregas saídas</div>
+      <div class="kpi-trend" style="color:var(--green)">↑ 15% vs ontem</div>
+    </div>
+    <div class="kpi c-amber kpi-clickable" onclick="openReturnedModal()" style="cursor:pointer">
+      <div class="kpi-accent"></div>
+      <div class="kpi-icon">↩️</div>
+      <div class="kpi-label">Retornaram</div>
+      <div class="kpi-value">${s.retornou}</div>
+      <div class="kpi-sub">prestaram conta</div>
+      <span class="kpi-badge">${retPct}% da frota</span>
+      <div class="kpi-hint">🔍 clique para ver lista</div>
+    </div>
+    <div class="kpi c-red kpi-clickable" onclick="openOccAnalytics()">
+      <div class="kpi-accent"></div>
+      <div class="kpi-icon">🚩</div>
+      <div class="kpi-label">Ocorrências</div>
+      <div class="kpi-value">${s.comOcorr}</div>
+      <div class="kpi-sub">motoristas com ocorrência</div>
+      <span class="kpi-badge" style="background:var(--pink-bg);color:var(--pink);border:1px solid var(--pink-bd)">${s.pctOcorr}% da frota</span>
+      <div class="kpi-hint">🔍 clique para analisar</div>
+    </div>
+  `;
+}
+
+/* ──────────── TABLE ──────────── */
+function renderTable() {
+  const tbody = document.getElementById('mainTable');
+  tbody.innerHTML = '';
+  const sorted = [...rows].sort((a,b) => b.ctes - a.ctes);
+
+  sorted.forEach((r, i) => {
+    const hasOcc      = r.occCodes && r.occCodes.length > 0;
+    const statusFilled = !!r.status;
+    const tr = document.createElement('tr');
+    tr.dataset.name = r.nome.toLowerCase();
+    tr.innerHTML = `
+      <td><span class="rank">${i+1}</span></td>
+      <td><span class="driver-name">${r.nome}</span></td>
+      <td><span class="plate">${r.placa||'—'}</span></td>
+      <td><span class="cte-num">${r.ctes}</span></td>
+      <td>
+        <select class="sel-status ${r.status==='Retornou'?'st-ret':r.status==='Não Retornou'?'st-nret':''}"
+          onchange="onStatusChange(${r.id}, this)">
+          <option value=""      ${!r.status?'selected':''}>— Aguardando —</option>
+          <option value="Retornou"      ${r.status==='Retornou'?'selected':''}>✅ Retornou</option>
+          <option value="Não Retornou"  ${r.status==='Não Retornou'?'selected':''}>❌ Não Retornou</option>
+        </select>
+      </td>
+      <td class="occ-cell" id="occ-cell-${r.id}">
+        ${buildOccPicker(r, statusFilled)}
+      </td>
+      <td>
+        <span class="pct-badge ${hasOcc?'has-val':''}" id="pct-${r.id}">
+          ${hasOcc ? r.occCodes.length + (r.occCodes.length===1?' ocorr.':' ocorr.') : '—'}
+        </span>
+      </td>
+      <td>
+        <input class="inp-obs" type="text" placeholder="Observação..."
+          value="${escHtml(r.obs)}" ${!statusFilled?'disabled title="Preencha o status de prestação primeiro"':''}
+          id="obs-inp-${r.id}"
+          oninput="onObsChange(${r.id}, this)">
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function buildOccPicker(r, enabled) {
+  // cada ocorrência é um item indexado — permite repetições
+  const tags = (r.occCodes||[]).map((code, idx) => {
+    const lbl = getOccLabel(code);
+    return `<span class="occ-tag">
+      <span title="${escHtml(lbl)}">${escHtml(code)}</span>
+      ${enabled ? `<button class="occ-tag-remove" onclick="removeOcc(${r.id},${idx})" title="Remover esta ocorrência">×</button>` : ''}
+    </span>`;
+  }).join('');
+
+  const selectOpts = occTypes.length
+    ? occTypes.map(o => `<option value="${escHtml(o.code)}">${escHtml(o.code)} — ${escHtml(o.desc)}</option>`).join('')
+    : `<option value="" disabled>Cadastre tipos em ⚙️</option>`;
+
+  return `<div class="occ-picker">
+    <div class="occ-tags" id="occ-tags-${r.id}">${tags}</div>
+    <div class="occ-add-row">
+      <select class="occ-add-select" id="occ-sel-${r.id}" ${!enabled?'disabled title="Preencha o status primeiro"':''}>
+        <option value="">+ Adicionar ocorrência</option>
+        ${selectOpts}
+      </select>
+      <button class="occ-add-btn" ${!enabled?'disabled':''} onclick="addOcc(${r.id})" title="Adicionar">＋</button>
+    </div>
+  </div>`;
+}
+
+function addOcc(id) {
+  const r   = rows.find(x => x.id===id);
+  const sel = document.getElementById('occ-sel-'+id);
+  if(!r || !sel || !sel.value) return;
+  const code = sel.value;
+  if(!r.occCodes) r.occCodes = [];
+  // permite duplicatas — mesma ocorrência pode ocorrer múltiplas vezes
+  r.occCodes.push(code);
+  sel.value = '';
+  refreshOccCell(r);
+  updateLive();
+}
+
+function removeOcc(id, idx) {
+  const r = rows.find(x => x.id===id);
+  if(!r) return;
+  r.occCodes = (r.occCodes||[]).filter((_, i) => i !== idx);
+  refreshOccCell(r);
+  updateLive();
+}
+
+function refreshOccCell(r) {
+  const cell = document.getElementById('occ-cell-'+r.id);
+  if(cell) cell.innerHTML = buildOccPicker(r, !!r.status);
+  const badge = document.getElementById('pct-'+r.id);
+  if(badge) {
+    const n = (r.occCodes||[]).length;
+    badge.textContent = n > 0 ? n + ' ocorr.' : '—';
+    badge.className   = 'pct-badge ' + (n > 0 ? 'has-val' : '');
+  }
+}
+
+function getOccLabel(code) {
+  if(!code) return '';
+  const found = occTypes.find(o => o.code === code);
+  return found ? `${found.code} — ${found.desc}` : code;
+}
+
+function escHtml(s) {
+  return (s||'').toString()
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ──────────── CELL EVENTS ──────────── */
+function onStatusChange(id, sel) {
+  const r = rows.find(x => x.id===id);
+  if(!r) return;
+  r.status = sel.value;
+  sel.className = 'sel-status ' +
+    (r.status==='Retornou'?'st-ret':r.status==='Não Retornou'?'st-nret':'');
+
+  const filled = !!r.status;
+  // refresh occ picker (enable/disable)
+  refreshOccCell(r);
+  const obsInp = document.getElementById('obs-inp-'+id);
+  if(obsInp) {
+    obsInp.disabled = !filled;
+    obsInp.title = filled ? '' : 'Preencha o status de prestação primeiro';
+  }
+  updateLive();
+}
+
+function onObsChange(id, inp) {
+  const r = rows.find(x => x.id===id);
+  if(r) r.obs = inp.value;
+  scheduleAutosave(false);
+}
+
+function updateLive() {
+  renderKPIs();
+  updateCharts();
+  scheduleAutosave(false);
+}
+
+/* ──────────── SEARCH ──────────── */
+function filterTable() {
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  document.querySelectorAll('#mainTable tr').forEach(tr => {
+    tr.classList.toggle('hidden-row', q && !tr.dataset.name.includes(q));
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   CHARTS
+══════════════════════════════════════════════════════ */
+const donutCfg = (labels, data, colors) => ({
+  type:'doughnut',
+  data:{
+    labels,
+    datasets:[{
+      data, backgroundColor:colors,
+      borderColor:['#ffffff','#ffffff','#ffffff'],
+      borderWidth:2, hoverBorderWidth:2
+    }]
+  },
+  options:{
+    cutout:'68%', responsive:true, maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      tooltip:{
+        backgroundColor:'#0f172a', borderColor:'#334155', borderWidth:1,
+        titleColor:'#e2e8f0', bodyColor:'#94a3b8', padding:10,
+        callbacks:{label:c=>` ${c.label}: ${c.raw}`}
+      }
+    }
+  }
+});
+
+function renderCharts() {
+  const s = calcStats();
+  if(chartPrest) chartPrest.destroy();
+  if(chartOcorr) chartOcorr.destroy();
+
+  chartPrest = new Chart(document.getElementById('cPrest'), donutCfg(
+    ['Retornou','Não Retornou','Aguardando'],
+    [s.retornou, s.naoRet, s.semMarca],
+    ['#0891b2','#db2777','#c7d2fe']
+  ));
+  document.getElementById('legPrest').innerHTML = `
+    <div class="leg-item"><span class="leg-dot" style="background:#0891b2"></span>Retornou<span class="leg-val">${s.retornou}</span></div>
+    <div class="leg-item"><span class="leg-dot" style="background:#db2777"></span>Não Retornou<span class="leg-val">${s.naoRet}</span></div>
+    <div class="leg-item"><span class="leg-dot" style="background:#c7d2fe"></span>Aguardando<span class="leg-val">${s.semMarca}</span></div>
+  `;
+
+  chartOcorr = new Chart(document.getElementById('cOcorr'), donutCfg(
+    ['Com ocorrência','Sem ocorrência'],
+    [s.comOcorr, Math.max(0, s.motoristas - s.comOcorr)],
+    ['#7c3aed','#e0e4f0']
+  ));
+  document.getElementById('legOcorr').innerHTML = `
+    <div class="leg-item"><span class="leg-dot" style="background:#7c3aed"></span>Com ocorrência<span class="leg-val">${s.comOcorr}</span></div>
+    <div class="leg-item"><span class="leg-dot" style="background:#e0e4f0"></span>Sem ocorrência<span class="leg-val">${Math.max(0,s.motoristas-s.comOcorr)}</span></div>
+  `;
+
+  renderOccBarsChart(s.occMap);
+}
+
+function updateCharts() {
+  const s = calcStats();
+  if(chartPrest) {
+    chartPrest.data.datasets[0].data = [s.retornou, s.naoRet, s.semMarca];
+    chartPrest.update();
+    document.getElementById('legPrest').innerHTML = `
+      <div class="leg-item"><span class="leg-dot" style="background:#0891b2"></span>Retornou<span class="leg-val">${s.retornou}</span></div>
+      <div class="leg-item"><span class="leg-dot" style="background:#db2777"></span>Não Retornou<span class="leg-val">${s.naoRet}</span></div>
+      <div class="leg-item"><span class="leg-dot" style="background:#c7d2fe"></span>Aguardando<span class="leg-val">${s.semMarca}</span></div>
+    `;
+  }
+  if(chartOcorr) {
+    chartOcorr.data.datasets[0].data = [s.comOcorr, Math.max(0,s.motoristas-s.comOcorr)];
+    chartOcorr.update();
+    document.getElementById('legOcorr').innerHTML = `
+      <div class="leg-item"><span class="leg-dot" style="background:#7c3aed"></span>Com ocorrência<span class="leg-val">${s.comOcorr}</span></div>
+      <div class="leg-item"><span class="leg-dot" style="background:#e0e4f0"></span>Sem ocorrência<span class="leg-val">${Math.max(0,s.motoristas-s.comOcorr)}</span></div>
+    `;
+  }
+  renderOccBarsChart(s.occMap);
+}
+
+function renderOccBarsChart(occMap) {
+  const el = document.getElementById('occBarsChart');
+  const entries = Object.entries(occMap).sort((a,b) => b[1]-a[1]);
+  if(!entries.length) {
+    el.innerHTML = `<div style="text-align:center;padding:30px 0;font-size:12px;color:var(--text3)">Nenhuma ocorrência registrada</div>`;
+    return;
+  }
+  const max = entries[0][1] || 1;
+  el.innerHTML = entries.map(([code, count]) => {
+    const label = getOccLabel(code) || code;
+    const pct   = Math.round((count/max)*100);
+    return `
+      <div class="occ-bar-item">
+        <span class="occ-bar-label" title="${escHtml(label)}">${escHtml(label)}</span>
+        <div class="occ-bar-track">
+          <div class="occ-bar-fill" style="width:${pct}%"></div>
+        </div>
+        <span class="occ-bar-count">${count}</span>
+      </div>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════════════════
+   OCCURRENCE TYPES
+══════════════════════════════════════════════════════ */
+function loadOccTypes() {
+  try { occTypes = JSON.parse(localStorage.getItem(OCC_KEY)||'[]'); } catch { occTypes=[]; }
+  // also try cloud
+  window.addEventListener('fbOccTypesLoaded', () => {
+    if(window._fbOccTypes && window._fbOccTypes.length) {
+      occTypes = window._fbOccTypes;
+      localStorage.setItem(OCC_KEY, JSON.stringify(occTypes));
+      renderOccList();
+      if(rows.length) renderTable();
+    }
+  }, { once: true });
+}
+function saveOccTypes() {
+  localStorage.setItem(OCC_KEY, JSON.stringify(occTypes));
+  if(window.fbSaveOccTypes) window.fbSaveOccTypes(occTypes);
+}
+
+function addOccType() {
+  const code = document.getElementById('occCode').value.trim();
+  const desc = document.getElementById('occDesc').value.trim();
+  if(!code || !desc) { toast('Preencha código e descrição.','t-amber'); return; }
+  if(occTypes.find(o => o.code===code)) {
+    toast('Código já cadastrado.','t-amber'); return;
+  }
+  occTypes.push({code, desc});
+  occTypes.sort((a,b) => +a.code - +b.code || a.code.localeCompare(b.code));
+  saveOccTypes();
+  document.getElementById('occCode').value = '';
+  document.getElementById('occDesc').value = '';
+  renderOccList();
+  // refresh selects in table if open
+  if(rows.length) renderTable();
+  toast('✅ Tipo adicionado!','t-green');
+}
+
+function removeOccType(code) {
+  occTypes = occTypes.filter(o => o.code !== code);
+  saveOccTypes();
+  renderOccList();
+  if(rows.length) renderTable();
+}
+
+function renderOccList() {
+  const list = document.getElementById('occList');
+  document.getElementById('occCount').textContent = `${occTypes.length} tipo${occTypes.length!==1?'s':''}`;
+  if(!occTypes.length) {
+    list.innerHTML = `<div class="occ-empty">Nenhum tipo cadastrado ainda.</div>`;
+    return;
+  }
+  list.innerHTML = occTypes.map(o => `
+    <div class="occ-item">
+      <span class="occ-code-pill">${escHtml(o.code)}</span>
+      <span class="occ-desc-text">${escHtml(o.desc)}</span>
+      <button class="occ-remove" onclick="removeOccType('${escHtml(o.code)}')" title="Remover">×</button>
+    </div>
+  `).join('');
+}
+
+function handleOccDrop(e) {
+  e.preventDefault();
+  const f = e.dataTransfer.files[0];
+  if(f) loadOccFile(f);
+}
+function loadOccFile(file) {
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, {type:'array'});
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:''});
+      let added  = 0;
+      data.forEach(row => {
+        const keys = Object.keys(row);
+        const cCode = keys.find(k => norm(k).includes('cod')) || keys[0];
+        const cDesc = keys.find(k => norm(k).includes('desc') || norm(k).includes('tipo') || norm(k).includes('ocorr')) || keys[1];
+        if(!cCode || !cDesc) return;
+        const code = row[cCode]?.toString().trim();
+        const desc = row[cDesc]?.toString().trim();
+        if(code && desc && !occTypes.find(o=>o.code===code)) {
+          occTypes.push({code,desc}); added++;
+        }
+      });
+      occTypes.sort((a,b) => +a.code - +b.code || a.code.localeCompare(b.code));
+      saveOccTypes();
+      renderOccList();
+      if(rows.length) renderTable();
+      toast(`✅ ${added} tipo(s) importado(s)!`,'t-green');
+    } catch { toast('Erro ao ler o arquivo.','t-red'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ══════════════════════════════════════════════════════
+   AUTOSAVE
+══════════════════════════════════════════════════════ */
+function scheduleAutosave(immediate) {
+  clearTimeout(autosaveTimer);
+  showAutosaveBadge('saving');
+  if(immediate) { doAutosave(); return; }
+  autosaveTimer = setTimeout(doAutosave, 1800);
+}
+
+function doAutosave() {
+  if(!rows.length) return;
+  const key = todayKey();
+  localStorage.setItem(AS_KEY, JSON.stringify({date:key, rows, saved:new Date().toISOString()}));
+  showAutosaveBadge('saved');
+  animateAutosaveBar();
+  // also save to Firebase (cloud sync)
+  if(window.fbSaveToday) window.fbSaveToday(rows);
+}
+
+function restoreAutosave() {
+  try {
+    const raw = localStorage.getItem(AS_KEY);
+    if(!raw) return;
+    const rec = JSON.parse(raw);
+    if(!rec.rows || !rec.rows.length) return;
+    const saved = new Date(rec.saved);
+    const diff  = (Date.now() - saved.getTime()) / 36e5; // hours
+    if(diff > 24) return; // older than 24h, skip
+    rows = rec.rows;
+    document.getElementById('importSection').style.display = 'none';
+    document.getElementById('dashboard').style.display     = 'block';
+    renderDashboard();
+    const timeStr = saved.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    toast(`♻️ Dados restaurados do autossave (${timeStr})`,'t-amber');
+  } catch {}
+}
+
+function showAutosaveBadge(state) {
+  const badge  = document.getElementById('autosaveBadge');
+  const dot    = document.getElementById('asDot');
+  const text   = document.getElementById('asText');
+  badge.className = `show ${state}`;
+  if(state==='saving') {
+    dot.classList.add('pulse');
+    text.textContent = 'Salvando...';
+  } else {
+    dot.classList.remove('pulse');
+    const t = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    text.textContent = `Salvo às ${t}`;
+    setTimeout(() => { badge.classList.remove('show'); }, 3500);
+  }
+}
+
+function animateAutosaveBar() {
+  const bar = document.getElementById('autosaveProgress');
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  bar.style.opacity = '1';
+  requestAnimationFrame(() => {
+    bar.style.transition = 'width 0.6s ease';
+    bar.style.width = '100%';
+    setTimeout(() => {
+      bar.style.transition = 'opacity 0.5s';
+      bar.style.opacity = '0';
+      setTimeout(() => { bar.style.width='0%'; bar.style.opacity='1'; }, 600);
+    }, 800);
+  });
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0,10);
+}
+
+/* ══════════════════════════════════════════════════════
+   ANÁLISE DE OCORRÊNCIAS (modal analítico)
+══════════════════════════════════════════════════════ */
+function openOccAnalytics() {
+  if(!rows.length) { toast('Carregue dados primeiro.','t-amber'); return; }
+  renderOccAnalyticsToday();
+  renderOccAnalyticsMonth();
+  openModal('modalOccAnalytics');
+  switchModalTab('today');
+}
+
+function switchModalTab(tab) {
+  ['today','month'].forEach(t => {
+    document.getElementById('mtab-'+t).classList.toggle('active', t===tab);
+    document.getElementById('mpanel-'+t).classList.toggle('active', t===tab);
+  });
+}
+
+function buildOccStats(rowsData) {
+  // contagem de cada código (incluindo repetições)
+  const typeMap = {};
+  // contagem por motorista (total de ocorrências incluindo repetições)
+  const driverMap = {};
+  rowsData.forEach(r => {
+    const codes = r.occCodes || [];
+    if(!codes.length) return;
+    const nome = r.nome || '?';
+    codes.forEach(code => {
+      if(!code) return;
+      typeMap[code]   = (typeMap[code]||0) + 1;
+      driverMap[nome] = (driverMap[nome]||0) + 1;
+    });
+  });
+  return { typeMap, driverMap };
+}
+
+function renderOccAnalyticsToday() {
+  const el = document.getElementById('occAnalyticsToday');
+  const { typeMap, driverMap } = buildOccStats(rows);
+  el.innerHTML = buildAnalyticsHTML(typeMap, driverMap, 'hoje');
+}
+
+async function renderOccAnalyticsMonth() {
+  const el = document.getElementById('occAnalyticsMonth');
+  el.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text3)">⏳ Carregando dados do mês...</div>`;
+
+  let dbData = {};
+  if(window.fbLoadHistory) dbData = await window.fbLoadHistory() || {};
+  const localDb = loadDB();
+  Object.keys(localDb).forEach(k => { if(!dbData[k]) dbData[k] = localDb[k]; });
+
+  // filtrar mês atual
+  const now = new Date();
+  const mesAtual = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const allRows = [];
+  Object.keys(dbData).forEach(k => {
+    if(k.startsWith(mesAtual) && dbData[k].rows) allRows.push(...dbData[k].rows);
+  });
+  // incluir rows atuais se ainda não salvos
+  rows.forEach(r => allRows.push(r));
+
+  if(!allRows.length) {
+    el.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text3)">📭 Nenhum dado disponível para este mês.</div>`;
+    return;
+  }
+  const { typeMap, driverMap } = buildOccStats(allRows);
+  el.innerHTML = buildAnalyticsHTML(typeMap, driverMap, `mês de ${now.toLocaleDateString('pt-BR',{month:'long'})}`);
+}
+
+function buildAnalyticsHTML(typeMap, driverMap, label) {
+  const typeEntries   = Object.entries(typeMap).sort((a,b) => b[1]-a[1]);
+  const driverEntries = Object.entries(driverMap).sort((a,b) => b[1]-a[1]);
+  const maxType   = typeEntries[0]?.[1] || 1;
+  const maxDriver = driverEntries[0]?.[1] || 1;
+
+  if(!typeEntries.length) {
+    return `<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--text3)">✅ Nenhuma ocorrência registrada (${label}).</div>`;
+  }
+
+  const typesHTML = typeEntries.slice(0,10).map(([code, count]) => {
+    const desc = occTypes.find(o=>o.code===code)?.desc || '—';
+    const pct  = Math.round((count/maxType)*100);
+    return `<div class="occ-type-item">
+      <span class="occ-type-code">${escHtml(code)}</span>
+      <span class="occ-type-desc" title="${escHtml(desc)}">${escHtml(desc)}</span>
+      <div class="occ-type-bar-wrap"><div class="occ-type-bar-fill" style="width:${pct}%"></div></div>
+      <span class="occ-type-count">${count}</span>
+    </div>`;
+  }).join('');
+
+  const driversHTML = driverEntries.slice(0,8).map(([nome, count], i) => {
+    const pct = Math.round((count/maxDriver)*100);
+    return `<div class="rank-item">
+      <span class="rank-pos">${i+1}</span>
+      <span class="rank-name">${escHtml(nome)}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar-fill" style="width:${pct}%"></div></div>
+      <span class="rank-count">${count}</span>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="occ-modal-section">
+      <h4>🏆 Tipos mais frequentes — ${label}</h4>
+      <div class="occ-type-list">${typesHTML}</div>
+    </div>
+    <div class="occ-modal-section">
+      <h4>👤 Motoristas com mais ocorrências — ${label}</h4>
+      <div class="rank-list">${driversHTML}</div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════════════
+   PENDENTES DO DIA ANTERIOR (retorno tardio)
+══════════════════════════════════════════════════════ */
+let _pendingDayKey = null;
+
+async function checkPendingYesterday() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const key = yesterday.toISOString().slice(0,10);
+
+  // busca no Firestore primeiro, depois localStorage
+  let rec = null;
+  if(window.fbLoadHistory) {
+    const hist = await window.fbLoadHistory();
+    if(hist && hist[key]) rec = hist[key];
+  }
+  if(!rec) {
+    const local = loadDB();
+    if(local[key]) rec = local[key];
+  }
+  if(!rec || !rec.rows) return;
+
+  // motoristas que não prestaram conta ainda
+  const pendentes = rec.rows.filter(r =>
+    r.statusPrestacao !== 'Retornou' && r.status !== 'Retornou'
+  );
+  if(!pendentes.length) return;
+
+  _pendingDayKey = key;
+  const list = document.getElementById('pendingList');
+  const d = new Date(key+'T12:00:00');
+  const dateFmt = d.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+
+  list.innerHTML = pendentes.slice(0,6).map(r => `
+    <div class="pending-item">
+      <span class="pending-item-name">🚚 ${escHtml(r.nome)}</span>
+      <span class="pending-item-date">${dateFmt}</span>
+    </div>`).join('') +
+    (pendentes.length > 6 ? `<div style="font-size:12px;color:var(--text3);text-align:center;padding:4px">...e mais ${pendentes.length-6} motoristas</div>` : '');
+
+  document.getElementById('pendingAlert').classList.add('open');
+}
+
+function closePendingAlert() {
+  document.getElementById('pendingAlert').classList.remove('open');
+}
+
+function openPendingDay() {
+  closePendingAlert();
+  if(!_pendingDayKey) return;
+  // carrega o dia anterior para edição (modo histórico editável)
+  const local = loadDB();
+  let rec = local[_pendingDayKey];
+  if(!rec) { toast('Registro não encontrado localmente.','t-amber'); return; }
+
+  rows = rec.rows.map(r => ({
+    ...r,
+    // normalizar campo de status (desktop usa "status", Firestore usa "statusPrestacao")
+    status: r.statusPrestacao || r.status || ''
+  }));
+
+  document.getElementById('importSection').style.display = 'none';
+  document.getElementById('dashboard').style.display     = 'block';
+
+  const d = new Date(_pendingDayKey+'T12:00:00');
+  document.getElementById('datePill').textContent =
+    d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}) +
+    ' ⏰ editando';
+
+  renderDashboard();
+  showPage('today');
+  toast(`📋 Conferência de ${d.toLocaleDateString('pt-BR')} carregada para edição.`,'t-amber');
+}
+
+/* ══════════════════════════════════════════════════════
+   SAVE DAY — atualiza campo statusPrestacao para Firestore
+══════════════════════════════════════════════════════ */
+function saveDay() {
+  if(!rows.length) { toast('Nenhum dado para salvar.','t-red'); return; }
+  const key = todayKey();
+  // normalizar: garantir statusPrestacao para compatibilidade com PWA mobile
+  const rowsNorm = rows.map(r => ({
+    ...r,
+    statusPrestacao: r.statusPrestacao || r.status || ''
+  }));
+  // local
+  const dbLocal = loadDB();
+  dbLocal[key]  = {date:key, rows:rowsNorm, saved:new Date().toISOString()};
+  saveDB(dbLocal);
+  // cloud
+  if(window.fbSaveToday) window.fbSaveToday(rowsNorm);
+  toast('✅ Conferência salva!','t-green');
+}
+
+function loadDB()   { try { return JSON.parse(localStorage.getItem(DB_KEY)||'{}'); } catch { return {}; } }
+function saveDB(db) { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+
+/* ══════════════════════════════════════════════════════
+   HISTORY
+══════════════════════════════════════════════════════ */
+async function renderHistory() {
+  const grid = document.getElementById('histGrid');
+  grid.innerHTML = `<div class="hist-empty"><span class="ei">⏳</span><p>Carregando histórico...</p></div>`;
+
+  // try cloud first
+  let dbData = null;
+  if(window.fbLoadHistory) dbData = await window.fbLoadHistory();
+
+  // merge with local as fallback
+  const localDb = loadDB();
+  if(!dbData || !Object.keys(dbData).length) dbData = localDb;
+  else {
+    // merge: cloud + local
+    Object.keys(localDb).forEach(k => { if(!dbData[k]) dbData[k] = localDb[k]; });
+  }
+
+  const keys = Object.keys(dbData).sort().reverse();
+  if(!keys.length) {
+    grid.innerHTML = `<div class="hist-empty"><span class="ei">📭</span><p>Nenhuma conferência salva ainda.</p></div>`;
+    return;
+  }
+  grid.innerHTML = keys.map(k => {
+    const rec  = dbData[k];
+    const tots = rec.rows.reduce((a,r) => ({
+      ctes:  a.ctes  + (r.ctes||0),
+      ocorr: a.ocorr + ((r.occCodes&&r.occCodes.length)?1:0),
+    }), {ctes:0,ocorr:0});
+    const ret  = rec.rows.filter(r => r.statusPrestacao === 'Retornou' || r.status === 'Retornou').length;
+    const d    = new Date(k+'T12:00:00');
+    const dd   = d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const wk   = d.toLocaleDateString('pt-BR',{weekday:'long'});
+    return `
+    <div class="hist-card" onclick="loadHistEntry('${k}', ${JSON.stringify(rec).replace(/"/g,'&quot;')})">
+      <div class="hist-card-top">
+        <div>
+          <div class="hist-date">${dd}</div>
+          <div class="hist-weekday">${wk}</div>
+        </div>
+        <button class="hist-del-btn" onclick="event.stopPropagation();askDeleteHist('${k}')">🗑</button>
+      </div>
+      <div class="hist-chips">
+        <span class="chip chip-blue">📦 ${tots.ctes} CTEs</span>
+        <span class="chip chip-green">✅ ${ret} retornaram</span>
+        <span class="chip chip-amber">⚠️ ${tots.ocorr} ocorr.</span>
+        <span class="chip chip-blue">${rec.rows.length} motoristas</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function loadHistEntry(key, recData) {
+  let rec = recData;
+  if(!rec) {
+    const dbLocal = loadDB();
+    rec = dbLocal[key];
+  }
+  if(!rec) return;
+  rows = rec.rows;
+  document.getElementById('importSection').style.display = 'none';
+  document.getElementById('dashboard').style.display     = 'block';
+  renderDashboard();
+  const d = new Date(key+'T12:00:00');
+  document.getElementById('datePill').textContent =
+    d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
+  showPage('today');
+  toast(`📋 Conferência de ${d.toLocaleDateString('pt-BR')} carregada.`,'t-green');
+}
+
+function askDeleteHist(key) { deleteHistKey=key; openModal('modalDelHist'); }
+function confirmDeleteHist() {
+  if(!deleteHistKey) return;
+  const dbLocal = loadDB();
+  delete dbLocal[deleteHistKey];
+  saveDB(dbLocal);
+  if(window.fbDeleteHistEntry) window.fbDeleteHistEntry(deleteHistKey);
+  closeModal('modalDelHist');
+  renderHistory();
+  deleteHistKey = null;
+  toast('🗑️ Conferência excluída.','');
+}
+
+/* ══════════════════════════════════════════════════════
+   NEW DAY
+══════════════════════════════════════════════════════ */
+function confirmNewDay() {
+  if(!rows.length) { startNewDay(); return; }
+  openModal('modalNewDay');
+}
+function startNewDay() {
+  rows = [];
+  closeModal('modalNewDay');
+  document.getElementById('importSection').style.display = 'block';
+  document.getElementById('dashboard').style.display     = 'none';
+  document.getElementById('fileInput').value='';
+  document.getElementById('searchInput').value='';
+  updateDatePill();
+  localStorage.removeItem(AS_KEY);
+  showPage('today');
+  if(chartPrest) { chartPrest.destroy(); chartPrest=null; }
+  if(chartOcorr) { chartOcorr.destroy(); chartOcorr=null; }
+}
+
+/* ══════════════════════════════════════════════════════
+   EXPORT XLSX
+══════════════════════════════════════════════════════ */
+function exportXLSX() {
+  if(!rows.length) { toast('Nenhum dado para exportar.','t-red'); return; }
+  const data=[['Motorista','Placa','CTEs','Status Prestação','Ocorrências','Descrições','Observações']];
+  rows.forEach(r => {
+    const codes = (r.occCodes||[]).join(', ');
+    const descs = (r.occCodes||[]).map(c => getOccLabel(c)).join(' | ');
+    data.push([r.nome, r.placa, r.ctes, r.status||'', codes, descs, r.obs||'']);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CONFERÊNCIA');
+  const d = new Date();
+  XLSX.writeFile(wb, `Conferencia_${d.toLocaleDateString('pt-BR').replace(/\//g,'-')}.xlsx`);
+  toast('⬇️ Excel exportado!','t-green');
+}
+
+function exportAllXLSX() {
+  const db   = loadDB();
+  const keys = Object.keys(db).sort();
+  if(!keys.length) { toast('Nenhum histórico para exportar.','t-amber'); return; }
+  const wb = XLSX.utils.book_new();
+  keys.forEach(k => {
+    const rec = db[k];
+    const data=[['Motorista','Placa','CTEs','Status','Ocorrências','Descrições','Observações']];
+    rec.rows.forEach(r => {
+      const codes = (r.occCodes||[]).join(', ');
+      const descs = (r.occCodes||[]).map(c => getOccLabel(c)).join(' | ');
+      data.push([r.nome,r.placa,r.ctes,r.status||'',codes,descs,r.obs||'']);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, k);
+  });
+  XLSX.writeFile(wb, `Historico_Conferencias.xlsx`);
+  toast('⬇️ Histórico exportado!','t-green');
+}
+
+/* ══════════════════════════════════════════════════════
+   MODALS / TOAST
+══════════════════════════════════════════════════════ */
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+/* ══════════════════════════════════════════════════════
+   ABA OCORRÊNCIAS — PAINEL COMPLETO
+══════════════════════════════════════════════════════ */
+
+// Coleta todos os registros de ocorrências de todas as fontes
+async function collectAllOccData(period) {
+  let allEntries = []; // {date, nome, placa, code, desc, status, obs}
+
+  // --- dados do histórico (Firestore + local) ---
+  let dbData = {};
+  if(window.fbLoadHistory) dbData = await window.fbLoadHistory() || {};
+  const localDb = loadDB();
+  Object.keys(localDb).forEach(k => { if(!dbData[k]) dbData[k] = localDb[k]; });
+
+  const now = new Date();
+  const mesAtual = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const todayKey_ = now.toISOString().slice(0,10);
+
+  Object.keys(dbData).forEach(dateKey => {
+    if(period === 'today'  && dateKey !== todayKey_) return;
+    if(period === 'month'  && !dateKey.startsWith(mesAtual)) return;
+    const rec = dbData[dateKey];
+    if(!rec || !rec.rows) return;
+    rec.rows.forEach(r => {
+      (r.occCodes || []).forEach(code => {
+        if(!code) return;
+        allEntries.push({
+          date:   dateKey,
+          nome:   r.nome   || '—',
+          placa:  r.placa  || '—',
+          code,
+          desc:   occTypes.find(o => o.code === code)?.desc || '—',
+          status: r.statusPrestacao || r.status || '—',
+          obs:    r.obs || ''
+        });
+      });
+    });
+  });
+
+  // --- dados da sessão atual (se não estiver no DB ainda) ---
+  if(period !== 'today' || rows.length) {
+    rows.forEach(r => {
+      // evitar duplicata se já foi salvo
+      (r.occCodes || []).forEach(code => {
+        if(!code) return;
+        // só adiciona se não há entrada idêntica já no dbData
+        const alreadySaved = dbData[todayKey_]?.rows?.some(dr => dr.nome === r.nome);
+        if(!alreadySaved) {
+          allEntries.push({
+            date:   todayKey_,
+            nome:   r.nome   || '—',
+            placa:  r.placa  || '—',
+            code,
+            desc:   occTypes.find(o => o.code === code)?.desc || '—',
+            status: r.statusPrestacao || r.status || '—',
+            obs:    r.obs || ''
+          });
+        }
+      });
+    });
+  }
+
+  return allEntries;
+}
+
+// Renderiza a aba completa
+async function renderOccReport() {
+  const period = document.getElementById('occFilterPeriod')?.value || 'all';
+  const entries = await collectAllOccData(period);
+
+  renderOccKpis(entries);
+  renderOccTypeChart(entries);
+  renderOccDriverChartPage(entries);
+  renderOccTimeline(entries);
+  renderOccDriverCards(entries);
+  renderOccDetailTable(entries);
+}
+
+// KPIs
+function renderOccKpis(entries) {
+  const total     = entries.length;
+  const drivers   = new Set(entries.map(e => e.nome)).size;
+  const types     = new Set(entries.map(e => e.code)).size;
+  const days      = new Set(entries.map(e => e.date)).size;
+
+  document.getElementById('occKpis').innerHTML = `
+    <div class="kpi c-blue">
+      <div class="kpi-accent"></div>
+      <div class="kpi-label">Total de Ocorrências</div>
+      <div class="kpi-value">${total}</div>
+      <div class="kpi-sub">registros no período</div>
+    </div>
+    <div class="kpi c-amber">
+      <div class="kpi-accent"></div>
+      <div class="kpi-label">Motoristas Afetados</div>
+      <div class="kpi-value">${drivers}</div>
+      <div class="kpi-sub">com ao menos 1 ocorrência</div>
+    </div>
+    <div class="kpi c-red">
+      <div class="kpi-accent"></div>
+      <div class="kpi-label">Tipos Diferentes</div>
+      <div class="kpi-value">${types}</div>
+      <div class="kpi-sub">códigos distintos</div>
+    </div>
+    <div class="kpi c-green">
+      <div class="kpi-accent"></div>
+      <div class="kpi-label">Dias com Ocorrência</div>
+      <div class="kpi-value">${days}</div>
+      <div class="kpi-sub">dias registrados</div>
+    </div>`;
+}
+
+// Gráfico de tipos (barras horizontais)
+function renderOccTypeChart(entries) {
+  const map = {};
+  entries.forEach(e => { map[e.code] = (map[e.code]||0) + 1; });
+  const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0,8);
+  const max = sorted[0]?.[1] || 1;
+  const el = document.getElementById('occTypeChart');
+  if(!sorted.length) { el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Sem dados</div>'; return; }
+  el.innerHTML = sorted.map(([code, count]) => {
+    const desc = occTypes.find(o => o.code === code)?.desc || code;
+    const pct  = Math.round((count/max)*100);
+    return `<div class="occ-bar-item" style="margin-bottom:6px">
+      <span class="occ-bar-label" style="width:100px" title="${escHtml(desc)}">${escHtml(code)} — ${escHtml(desc)}</span>
+      <div class="occ-bar-track" style="flex:1;height:10px;background:var(--border);border-radius:5px;overflow:hidden;margin:0 8px">
+        <div style="height:100%;border-radius:5px;background:linear-gradient(90deg,var(--accent),#7c3aed);width:${pct}%;transition:width .5s ease"></div>
+      </div>
+      <span class="occ-bar-count" style="font-size:11px;font-weight:800;color:var(--accent)">${count}</span>
+    </div>`;
+  }).join('');
+}
+
+// Ranking de motoristas (barras)
+function renderOccDriverChartPage(entries) {
+  const map = {};
+  entries.forEach(e => { map[e.nome] = (map[e.nome]||0) + 1; });
+  const sorted = Object.entries(map).sort((a,b) => b[1]-a[1]).slice(0,8);
+  const max = sorted[0]?.[1] || 1;
+  const el = document.getElementById('occDriverChart');
+  if(!sorted.length) { el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Sem dados</div>'; return; }
+  el.innerHTML = sorted.map(([nome, count], i) => {
+    const pct = Math.round((count/max)*100);
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+    return `<div class="rank-item" style="margin-bottom:5px">
+      <span class="rank-pos">${medal||i+1}</span>
+      <span class="rank-name">${escHtml(nome)}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar-fill" style="width:${pct}%"></div></div>
+      <span class="rank-count">${count}</span>
+    </div>`;
+  }).join('');
+}
+
+// Linha do tempo por dia
+function renderOccTimeline(entries) {
+  const map = {};
+  entries.forEach(e => { map[e.date] = (map[e.date]||0) + 1; });
+  const sorted = Object.entries(map).sort((a,b) => a[0].localeCompare(b[0])).slice(-14);
+  const max = sorted.reduce((m,[,v]) => Math.max(m,v), 1);
+  const el = document.getElementById('occTimeline');
+  if(!sorted.length) { el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Sem dados</div>'; return; }
+  el.innerHTML = sorted.map(([date, count]) => {
+    const d   = new Date(date+'T12:00:00');
+    const lbl = d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+    const pct = Math.round((count/max)*100);
+    return `<div class="timeline-item">
+      <span class="timeline-date">${lbl}</span>
+      <div class="timeline-track"><div class="timeline-fill" style="width:${pct}%"></div></div>
+      <span class="timeline-val">${count}</span>
+    </div>`;
+  }).join('');
+}
+
+// Cards por motorista
+function renderOccDriverCards(entries) {
+  // agrupar por motorista
+  const driverMap = {};
+  entries.forEach(e => {
+    if(!driverMap[e.nome]) driverMap[e.nome] = {nome:e.nome, placa:e.placa, entries:[]};
+    driverMap[e.nome].entries.push(e);
+  });
+  const sorted = Object.values(driverMap).sort((a,b) => b.entries.length - a.entries.length);
+  const el = document.getElementById('occDriverCards');
+  if(!sorted.length) {
+    el.innerHTML = '<div class="occ-empty-state"><span>✅</span><p>Nenhuma ocorrência registrada no período.</p></div>';
+    return;
+  }
+
+  el.innerHTML = sorted.map(d => {
+    // contagem por código para este motorista
+    const codeCount = {};
+    d.entries.forEach(e => { codeCount[e.code] = (codeCount[e.code]||0) + 1; });
+    const tags = Object.entries(codeCount).sort((a,b)=>b[1]-a[1]).map(([code,cnt]) => {
+      const desc = occTypes.find(o=>o.code===code)?.desc || '';
+      return `<span class="occ-driver-tag" title="${escHtml(desc)}">${escHtml(code)}${cnt>1?` ×${cnt}`:''}</span>`;
+    }).join('');
+    const dates = [...new Set(d.entries.map(e=>e.date))].sort().slice(-3)
+      .map(dt => new Date(dt+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}))
+      .join(', ');
+    return `<div class="occ-driver-card">
+      <div class="occ-driver-card-top">
+        <span class="occ-driver-name">🚚 ${escHtml(d.nome)}</span>
+        <span class="occ-driver-total">${d.entries.length} ocorr.</span>
+      </div>
+      <div class="occ-driver-tags">${tags}</div>
+      <div class="occ-driver-dates">📅 ${dates}</div>
+    </div>`;
+  }).join('');
+}
+
+// Tabela detalhada
+function renderOccDetailTable(entries) {
+  const tbody = document.getElementById('occDetailTable');
+  document.getElementById('occTableCount').textContent = `${entries.length} registro(s)`;
+
+  if(!entries.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text3)">✅ Nenhuma ocorrência no período.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...entries].sort((a,b) => b.date.localeCompare(a.date) || a.nome.localeCompare(b.nome));
+  tbody.innerHTML = sorted.map(e => {
+    const d = new Date(e.date+'T12:00:00');
+    const dateFmt = d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit',year:'2-digit'});
+    const statusCls = e.status==='Retornou'?'chip chip-green':e.status==='Não Retornou'?'chip chip-red':'chip chip-blue';
+    return `<tr data-driver="${escHtml(e.nome.toLowerCase())}">
+      <td style="white-space:nowrap;font-size:11px;color:var(--text2)">${dateFmt}</td>
+      <td><span class="driver-name">${escHtml(e.nome)}</span></td>
+      <td><span class="plate">${escHtml(e.placa)}</span></td>
+      <td><span class="occ-code-pill">${escHtml(e.code)}</span></td>
+      <td style="font-size:12px;color:var(--text2)">${escHtml(e.desc)}</td>
+      <td><span class="${statusCls}">${escHtml(e.status)}</span></td>
+      <td style="font-size:11px;color:var(--text3)">${escHtml(e.obs)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Filtro por motorista na tabela
+function filterOccTable() {
+  const q = document.getElementById('occFilterDriver')?.value.toLowerCase().trim() || '';
+  document.querySelectorAll('#occDetailTable tr').forEach(tr => {
+    tr.classList.toggle('hidden-row', q && !(tr.dataset.driver||'').includes(q));
+  });
+}
+
+// Exportar XLSX de ocorrências
+async function exportOccXLSX() {
+  const period = document.getElementById('occFilterPeriod')?.value || 'all';
+  const entries = await collectAllOccData(period);
+  if(!entries.length) { toast('Nenhuma ocorrência para exportar.','t-amber'); return; }
+
+  const data = [['Data','Motorista','Placa','Código','Descrição','Status Prestação','Observação']];
+  [...entries].sort((a,b)=>b.date.localeCompare(a.date)||a.nome.localeCompare(b.nome)).forEach(e => {
+    data.push([e.date, e.nome, e.placa, e.code, e.desc, e.status, e.obs]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  // ajustar largura das colunas
+  ws['!cols'] = [12,28,12,8,32,18,30].map(w => ({wch:w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'OCORRÊNCIAS');
+  const d = new Date();
+  XLSX.writeFile(wb, `Ocorrencias_${d.toLocaleDateString('pt-BR').replace(/\//g,'-')}.xlsx`);
+  toast('⬇️ Ocorrências exportadas!','t-green');
+}
+
+
+/* ══════════════════════════════════════════════════════
+   LOGIN
+══════════════════════════════════════════════════════ */
+const LOGIN_CREDS = { user: 'admin', pass: 'admin' };
+
+function doLogin() {
+  const u = document.getElementById('loginUser').value.trim().toLowerCase();
+  const p = document.getElementById('loginPass').value;
+  const err = document.getElementById('loginError');
+  if(u === LOGIN_CREDS.user && p === LOGIN_CREDS.pass) {
+    document.getElementById('loginScreen').classList.add('hidden');
+    err.classList.remove('show');
+  } else {
+    err.classList.add('show');
+    document.getElementById('loginPass').value = '';
+    document.getElementById('loginPass').focus();
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   MOTORISTAS CADASTRADOS (localStorage)
+══════════════════════════════════════════════════════ */
+const DRV_KEY = 'conf_drivers_v1';
+
+function loadDriversDB() {
+  try { return JSON.parse(localStorage.getItem(DRV_KEY) || '[]'); } catch { return []; }
+}
+function saveDriversDB(arr) { localStorage.setItem(DRV_KEY, JSON.stringify(arr)); }
+
+function openDriversModal() {
+  renderDriversGrid();
+  openModal('modalDrivers');
+}
+
+function registerDriver() {
+  const name  = document.getElementById('drvRegName').value.trim();
+  const plate = document.getElementById('drvRegPlate').value.trim().toUpperCase();
+  if(!name) { toast('Informe o nome do motorista.','t-amber'); return; }
+  const drivers = loadDriversDB();
+  if(drivers.find(d => d.name.toLowerCase() === name.toLowerCase())) {
+    toast('Motorista já cadastrado.','t-amber'); return;
+  }
+  // calcular histórico a partir dos dados salvos
+  drivers.push({ id: Date.now(), name, plate: plate || '—', totalDeliveries: 0, totalOcc: 0 });
+  saveDriversDB(drivers);
+  document.getElementById('drvRegName').value  = '';
+  document.getElementById('drvRegPlate').value = '';
+  renderDriversGrid();
+  toast('✅ Motorista cadastrado!','t-green');
+}
+
+function removeDriver(id) {
+  const drivers = loadDriversDB().filter(d => d.id !== id);
+  saveDriversDB(drivers);
+  renderDriversGrid();
+  toast('🗑️ Motorista removido.','');
+}
+
+function getDriverStats(name) {
+  // Percorre todo o histórico para calcular entregas e ocorrências acumuladas
+  const db = loadDB();
+  let totalDeliveries = 0, totalOcc = 0;
+  Object.values(db).forEach(rec => {
+    if(!rec.rows) return;
+    rec.rows.forEach(r => {
+      if((r.nome||'').toLowerCase() === name.toLowerCase()) {
+        totalDeliveries += (r.ctes || 0);
+        totalOcc += ((r.occCodes && r.occCodes.length) ? r.occCodes.length : 0);
+      }
+    });
+  });
+  // também verificar sessão atual
+  rows.forEach(r => {
+    if((r.nome||'').toLowerCase() === name.toLowerCase()) {
+      totalDeliveries += (r.ctes || 0);
+      totalOcc += ((r.occCodes && r.occCodes.length) ? r.occCodes.length : 0);
+    }
+  });
+  return { totalDeliveries, totalOcc };
+}
+
+function renderDriversGrid() {
+  const drivers = loadDriversDB();
+  const grid = document.getElementById('driversGrid');
+  if(!drivers.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--text3)">
+      <div style="font-size:48px;margin-bottom:12px">🚛</div>
+      <p style="font-weight:600">Nenhum motorista cadastrado ainda.</p>
+      <p style="font-size:12px;margin-top:4px">Use o formulário acima para cadastrar.</p>
+    </div>`;
+    return;
+  }
+  grid.innerHTML = drivers.map(d => {
+    const stats = getDriverStats(d.name);
+    const initials = d.name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    return `<div class="driver-card-item">
+      <div class="driver-card-avatar">${initials}</div>
+      <div class="driver-card-name">${escHtml(d.name)}</div>
+      <div class="driver-card-plate">${escHtml(d.plate)}</div>
+      <div class="driver-card-stats">
+        <div class="driver-stat">
+          <div class="driver-stat-val">${stats.totalDeliveries}</div>
+          <div class="driver-stat-label">Entregas</div>
+        </div>
+        <div class="driver-stat">
+          <div class="driver-stat-val" style="${stats.totalOcc>0?'color:var(--pink)':''}">${stats.totalOcc}</div>
+          <div class="driver-stat-label">Ocorr.</div>
+        </div>
+      </div>
+      <button class="driver-card-remove" onclick="removeDriver(${d.id})">🗑 Remover</button>
+    </div>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════════════════
+   MODAL RETORNARAM
+══════════════════════════════════════════════════════ */
+function openReturnedModal() {
+  if(!rows.length) { toast('Carregue os dados primeiro.','t-amber'); return; }
+  const s = calcStats();
+  const retornaram  = rows.filter(r => r.status === 'Retornou');
+  const comOcorr    = retornaram.filter(r => r.occCodes && r.occCodes.length > 0).length;
+  const totalOcorr  = retornaram.reduce((sum,r) => sum + (r.occCodes?.length || 0), 0);
+
+  document.getElementById('returnedKpis').innerHTML = `
+    <div class="returned-kpi">
+      <div class="returned-kpi-val" style="color:var(--green)">${retornaram.length}</div>
+      <div class="returned-kpi-label">Retornaram</div>
+    </div>
+    <div class="returned-kpi">
+      <div class="returned-kpi-val" style="color:var(--pink)">${comOcorr}</div>
+      <div class="returned-kpi-label">Com Ocorrência</div>
+    </div>
+    <div class="returned-kpi">
+      <div class="returned-kpi-val">${totalOcorr}</div>
+      <div class="returned-kpi-label">Total de Ocorr.</div>
+    </div>`;
+
+  const listEl = document.getElementById('returnedList');
+  if(!retornaram.length) {
+    listEl.innerHTML = `<div class="returned-empty"><div class="ri">🕐</div><p style="font-weight:700;font-size:15px">Nenhum motorista retornou ainda.</p><p style="font-size:13px;margin-top:4px">Aguardando prestação de contas.</p></div>`;
+    openModal('modalReturned'); return;
+  }
+
+  const sorted = [...retornaram].sort((a,b) => (b.occCodes?.length||0) - (a.occCodes?.length||0));
+  listEl.innerHTML = `<div class="returned-list">${sorted.map(r => {
+    const initials = r.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    const occ = r.occCodes?.length || 0;
+    const occLabel = occ > 0 ? `🚩 ${occ} ocorr.` : '✅ Sem ocorrência';
+    return `<div class="returned-item">
+      <div class="returned-item-avatar" style="${occ>0?'background:linear-gradient(135deg,#EC4899,#DB2777)':''}">${initials}</div>
+      <div>
+        <div class="returned-item-name">${escHtml(r.nome)}</div>
+        <span class="returned-item-plate">${escHtml(r.placa||'—')}</span>
+      </div>
+      <div class="returned-item-right">
+        <span class="returned-item-occ ${occ===0?'none':''}">${occLabel}</span>
+        <span style="font-size:12px;font-weight:700;color:var(--text3)">${r.ctes} CTEs</span>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+
+  openModal('modalReturned');
+}
+
+
+document.querySelectorAll('.overlay').forEach(o => {
+  o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); });
+});
+
+let toastTimer;
+function toast(msg, cls='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = 'show ' + cls;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 01 — RANKING DE PRODUTIVIDADE
+══════════════════════════════════════════════════════ */
+let rankingSortKey = 'prod';
+let rankingSortDir = 'desc';
+
+function getRowRealizadas(r) {
+  if(r.realizadas > 0) return r.realizadas;
+  return r.status === 'Retornou' ? (r.ctes||0) : 0;
+}
+
+function renderRanking() {
+  const tbody = document.getElementById('rankingBody');
+  if(!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:48px;color:var(--text3)">📂 Carregue uma conferência para ver o ranking.</td></tr>`;
+    document.getElementById('rankingSubtitle').textContent = 'Sem dados carregados';
+    return;
+  }
+
+  const data = rows.map(r => {
+    const realizadas = getRowRealizadas(r);
+    const prod = r.ctes > 0 ? (realizadas / r.ctes) * 100 : 0;
+    return {...r, realizadas, prod};
+  });
+
+  const sorted = [...data].sort((a,b) => {
+    let va = rankingSortKey === 'prod' ? a.prod : rankingSortKey === 'ctes' ? a.ctes : rankingSortKey === 'nome' ? a.nome : a.placa;
+    let vb = rankingSortKey === 'prod' ? b.prod : rankingSortKey === 'ctes' ? b.ctes : rankingSortKey === 'nome' ? b.nome : b.placa;
+    if(typeof va === 'string') return rankingSortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return rankingSortDir === 'asc' ? va - vb : vb - va;
+  });
+
+  const n = sorted.length;
+  tbody.innerHTML = sorted.map((r, i) => {
+    const pos = i + 1;
+    const pctW = Math.min(100, r.prod);
+    const cls = i < 3 ? 'rank-top3' : (i >= n-3 && n > 3) ? 'rank-bot3' : '';
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : pos;
+    return `<tr class="${cls}">
+      <td><span style="font-size:${i<3?'18px':'12px'};font-weight:700">${medal}</span></td>
+      <td><span class="driver-name">${escHtml(r.nome)}</span></td>
+      <td><span class="plate">${escHtml(r.placa||'—')}</span></td>
+      <td><span class="cte-num">${r.ctes}</span></td>
+      <td>${r.realizadas}</td>
+      <td>
+        <span style="font-weight:800;color:${r.prod>=80?'var(--green)':r.prod>=50?'var(--amber)':'var(--red)'}">${r.prod.toFixed(1)}%</span>
+        <span class="prod-bar-wrap"><span class="prod-bar-fill" style="width:${pctW}%"></span></span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('rankingSubtitle').textContent = `${sorted.length} motoristas · conferência atual`;
+}
+
+function sortRanking(key) {
+  if(rankingSortKey === key) rankingSortDir = rankingSortDir==='asc'?'desc':'asc';
+  else { rankingSortKey = key; rankingSortDir = 'desc'; }
+  renderRanking();
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 02 — CONCLUSÃO DA OPERAÇÃO
+══════════════════════════════════════════════════════ */
+let chartConclusao = null;
+
+function renderConclusao() {
+  if(!rows.length) {
+    document.getElementById('conclusaoKpis').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--text3)">📂 Carregue uma conferência primeiro.</div>`;
+    return;
+  }
+
+  const totalCTEs = rows.reduce((s,r) => s + (r.ctes||0), 0);
+  const totalReal = rows.reduce((s,r) => s + getRowRealizadas(r), 0);
+  const pctConcl  = totalCTEs > 0 ? (totalReal/totalCTEs)*100 : 0;
+  const pctPend   = 100 - pctConcl;
+
+  document.getElementById('conclusaoKpis').innerHTML = `
+    <div class="kpi c-blue">
+      <div class="kpi-accent"></div><div class="kpi-icon">📦</div>
+      <div class="kpi-label">Total de CTEs</div>
+      <div class="kpi-value">${totalCTEs}</div>
+      <div class="kpi-sub">saídas na operação</div>
+    </div>
+    <div class="kpi c-green">
+      <div class="kpi-accent"></div><div class="kpi-icon">✅</div>
+      <div class="kpi-label">Realizadas</div>
+      <div class="kpi-value">${totalReal}</div>
+      <div class="kpi-sub">entregas confirmadas</div>
+    </div>
+    <div class="kpi c-amber">
+      <div class="kpi-accent"></div><div class="kpi-icon">🎯</div>
+      <div class="kpi-label">Conclusão</div>
+      <div class="kpi-value">${pctConcl.toFixed(1)}%</div>
+      <span class="kpi-badge">${totalReal} de ${totalCTEs}</span>
+    </div>
+    <div class="kpi c-red">
+      <div class="kpi-accent"></div><div class="kpi-icon">⏳</div>
+      <div class="kpi-label">Pendente</div>
+      <div class="kpi-value">${pctPend.toFixed(1)}%</div>
+      <span class="kpi-badge" style="background:var(--red-bg);color:var(--red);border-color:var(--red-bd)">${totalCTEs-totalReal} CTEs</span>
+    </div>
+  `;
+
+  if(chartConclusao) chartConclusao.destroy();
+  chartConclusao = new Chart(document.getElementById('cConclusao'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Realizadas', 'Pendentes'],
+      datasets: [{
+        data: [totalReal, Math.max(0, totalCTEs - totalReal)],
+        backgroundColor: ['#22C55E','#EF4444'],
+        borderColor: ['#fff','#fff'], borderWidth: 2
+      }]
+    },
+    options: {
+      cutout: '68%', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: {display:false}, tooltip: { backgroundColor:'#0f172a', padding:10 } }
+    }
+  });
+  document.getElementById('legConclusao').innerHTML = `
+    <div class="leg-item"><span class="leg-dot" style="background:#22C55E"></span>Realizadas<span class="leg-val">${totalReal}</span></div>
+    <div class="leg-item"><span class="leg-dot" style="background:#EF4444"></span>Pendentes<span class="leg-val">${totalCTEs-totalReal}</span></div>
+  `;
+  document.getElementById('conclusaoProgressBar').style.width = pctConcl.toFixed(1) + '%';
+  document.getElementById('conclusaoProgressPct').textContent = pctConcl.toFixed(1) + '%';
+  document.getElementById('conclusaoProgressDetail').textContent = `${totalReal} de ${totalCTEs} CTEs`;
+  document.getElementById('conclusaoPendPct').textContent = pctPend.toFixed(1) + '% pendente';
+  document.getElementById('conclusaoLegend').innerHTML = `
+    <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--green);font-weight:700">✅ Realizadas</span><span style="font-weight:800">${totalReal} (${pctConcl.toFixed(1)}%)</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--red);font-weight:700">⏳ Pendentes</span><span style="font-weight:800">${totalCTEs-totalReal} (${pctPend.toFixed(1)}%)</span></div>
+  `;
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 03 — MOTORISTAS PENDENTES
+══════════════════════════════════════════════════════ */
+function renderPendentes() {
+  const tbody = document.getElementById('pendentesBody');
+  const resumo = document.getElementById('pendentesResumo');
+  const totalDiv = document.getElementById('pendentesTotal');
+
+  if(!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:48px;color:var(--text3)">📂 Carregue uma conferência primeiro.</td></tr>`;
+    resumo.textContent = '';
+    totalDiv.innerHTML = '';
+    return;
+  }
+
+  const pendentes = rows.map(r => {
+    const realizadas = getRowRealizadas(r);
+    const pendQtd = (r.ctes||0) - realizadas;
+    return {...r, realizadas, pendQtd};
+  }).filter(r => r.pendQtd > 0).sort((a,b) => b.pendQtd - a.pendQtd);
+
+  const totalPend = pendentes.reduce((s,r) => s + r.pendQtd, 0);
+  resumo.textContent = `${pendentes.length} motoristas · ${totalPend} CTEs pendentes`;
+
+  totalDiv.innerHTML = `
+    <div class="kpi c-red" style="min-height:auto;padding:16px 22px;flex:none">
+      <div class="kpi-accent"></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div class="kpi-icon" style="margin:0">⏳</div>
+        <div>
+          <div class="kpi-label">Total de CTEs Pendentes</div>
+          <div class="kpi-value" style="font-size:28px">${totalPend}</div>
+        </div>
+      </div>
+    </div>
+    <div class="kpi c-amber" style="min-height:auto;padding:16px 22px;flex:none">
+      <div class="kpi-accent"></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div class="kpi-icon" style="margin:0">🚚</div>
+        <div>
+          <div class="kpi-label">Motoristas Pendentes</div>
+          <div class="kpi-value" style="font-size:28px">${pendentes.length}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if(!pendentes.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:48px;color:var(--green);font-weight:700">✅ Todos os motoristas estão em dia!</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = pendentes.map((r,i) => `
+    <tr>
+      <td><span class="rank">${i+1}</span></td>
+      <td><span class="driver-name">${escHtml(r.nome)}</span></td>
+      <td><span class="plate">${escHtml(r.placa||'—')}</span></td>
+      <td>${r.ctes}</td>
+      <td>${r.realizadas}</td>
+      <td><span style="font-weight:800;color:var(--red);font-size:16px">${r.pendQtd}</span></td>
+    </tr>
+  `).join('');
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 04 — EXPORTAÇÃO EXCEL
+══════════════════════════════════════════════════════ */
+function exportOperacaoXLSX() {
+  if(!rows.length) { toast('Nenhum dado para exportar.','t-red'); return; }
+  const data = [['Motorista','Placa','CTEs','Realizadas','Auditadas','Produtividade (%)']];
+  rows.forEach(r => {
+    const real = getRowRealizadas(r);
+    const prod = r.ctes > 0 ? ((real/r.ctes)*100).toFixed(1) : '0.0';
+    data.push([r.nome, r.placa, r.ctes, real, r.auditadas||0, prod]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [28,12,8,12,12,16].map(w=>({wch:w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'OPERAÇÃO');
+  XLSX.writeFile(wb, `Operacao_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.xlsx`);
+  toast('⬇️ Operação exportada!','t-green');
+}
+
+function exportRankingXLSX() {
+  if(!rows.length) { toast('Nenhum dado para exportar.','t-red'); return; }
+  const data = [['Posição','Motorista','Placa','CTEs','Realizadas','Produtividade (%)']];
+  const sorted = [...rows].map(r => {
+    const real = getRowRealizadas(r);
+    const prod = r.ctes > 0 ? (real/r.ctes)*100 : 0;
+    return {...r, realizadas: real, prod};
+  }).sort((a,b) => b.prod - a.prod);
+  sorted.forEach((r,i) => {
+    data.push([i+1, r.nome, r.placa, r.ctes, r.realizadas, r.prod.toFixed(1)]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [8,28,12,8,12,16].map(w=>({wch:w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'RANKING');
+  XLSX.writeFile(wb, `Ranking_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.xlsx`);
+  toast('⬇️ Ranking exportado!','t-green');
+}
+
+function exportPendentesXLSX() {
+  if(!rows.length) { toast('Nenhum dado para exportar.','t-red'); return; }
+  const pendentes = rows.map(r => {
+    const real = getRowRealizadas(r);
+    return {...r, realizadas: real, pendQtd: (r.ctes||0)-real};
+  }).filter(r => r.pendQtd > 0).sort((a,b) => b.pendQtd - a.pendQtd);
+
+  if(!pendentes.length) { toast('Nenhum motorista pendente.','t-amber'); return; }
+  const data = [['Motorista','Placa','CTEs','Realizadas','Pendentes']];
+  pendentes.forEach(r => data.push([r.nome, r.placa, r.ctes, r.realizadas, r.pendQtd]));
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [28,12,8,12,10].map(w=>({wch:w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'PENDENTES');
+  XLSX.writeFile(wb, `Pendentes_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.xlsx`);
+  toast('⬇️ Pendentes exportados!','t-green');
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 06 — DASHBOARD GERENCIAL
+══════════════════════════════════════════════════════ */
+let chartMgrPie=null, chartMgrBar=null, chartMgrStacked=null;
+
+function renderMgrDashboard() {
+  if(!rows.length) {
+    document.getElementById('mgrKpis').innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--text3)">📂 Carregue uma conferência primeiro.</div>`;
+    return;
+  }
+
+  const s = calcStats();
+  const allData = rows.map(r => {
+    const real = getRowRealizadas(r);
+    return {...r, realizadas:real, prod: r.ctes>0?(real/r.ctes)*100:0};
+  });
+  const bestDriver = [...allData].sort((a,b)=>b.prod-a.prod)[0];
+  const mostVolume = [...allData].sort((a,b)=>b.ctes-a.ctes)[0];
+  const avgProd = allData.length ? (allData.reduce((sum,r)=>sum+r.prod,0)/allData.length).toFixed(1) : 0;
+
+  document.getElementById('mgrKpis').innerHTML = `
+    <div class="kpi c-blue"><div class="kpi-accent"></div><div class="kpi-icon">📦</div>
+      <div class="kpi-label">Total de CTEs</div><div class="kpi-value">${s.totalCTEs}</div><div class="kpi-sub">operação atual</div></div>
+    <div class="kpi c-green"><div class="kpi-accent"></div><div class="kpi-icon">✅</div>
+      <div class="kpi-label">Realizadas</div><div class="kpi-value">${s.totalRealizadas}</div></div>
+    <div class="kpi c-amber"><div class="kpi-accent"></div><div class="kpi-icon">📊</div>
+      <div class="kpi-label">Produtividade Média</div><div class="kpi-value">${avgProd}%</div></div>
+    <div class="kpi c-red"><div class="kpi-accent"></div><div class="kpi-icon">🚚</div>
+      <div class="kpi-label">Motoristas</div><div class="kpi-value">${s.motoristas}</div></div>
+  `;
+
+  // Charts
+  const top10 = [...allData].sort((a,b)=>b.prod-a.prod).slice(0,10);
+  const top8CTEs = [...allData].sort((a,b)=>b.ctes-a.ctes).slice(0,8);
+  const top15 = [...allData].sort((a,b)=>b.ctes-a.ctes).slice(0,15);
+
+  if(chartMgrPie) chartMgrPie.destroy();
+  chartMgrPie = new Chart(document.getElementById('cMgrPie'), {
+    type:'doughnut',
+    data:{
+      labels: top8CTEs.map(r=>r.nome.split(' ')[0]),
+      datasets:[{data:top8CTEs.map(r=>r.ctes), backgroundColor:['#2563EB','#7C3AED','#22C55E','#F59E0B','#EC4899','#0891b2','#6366f1','#14b8a6'], borderWidth:2, borderColor:'#fff'}]
+    },
+    options:{cutout:'50%',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
+  });
+
+  if(chartMgrBar) chartMgrBar.destroy();
+  chartMgrBar = new Chart(document.getElementById('cMgrBar'), {
+    type:'bar',
+    data:{
+      labels: top10.map(r=>r.nome.split(' ')[0]),
+      datasets:[{label:'Produtividade %',data:top10.map(r=>+r.prod.toFixed(1)),backgroundColor:'rgba(37,99,235,.75)',borderRadius:6}]
+    },
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{max:100,grid:{color:'rgba(0,0,0,.04)'}}}}
+  });
+
+  if(chartMgrStacked) chartMgrStacked.destroy();
+  chartMgrStacked = new Chart(document.getElementById('cMgrStacked'), {
+    type:'bar',
+    data:{
+      labels: top15.map(r=>r.nome.split(' ')[0]),
+      datasets:[
+        {label:'Realizadas',data:top15.map(r=>r.realizadas),backgroundColor:'rgba(34,197,94,.7)',borderRadius:4},
+        {label:'Pendentes',data:top15.map(r=>Math.max(0,r.ctes-r.realizadas)),backgroundColor:'rgba(239,68,68,.55)',borderRadius:4}
+      ]
+    },
+    options:{responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true},y:{stacked:true,grid:{color:'rgba(0,0,0,.04)'}}},plugins:{legend:{position:'bottom'}}}
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 07 — VIAGEM ADICIONAL
+══════════════════════════════════════════════════════ */
+function adicionarViagem() {
+  const nome  = document.getElementById('vaMotorista').value.trim();
+  const placa = document.getElementById('vaPlaca').value.trim().toUpperCase();
+  const ctes  = parseInt(document.getElementById('vaCtes').value)||0;
+
+  if(!nome) { toast('Informe o nome do motorista.','t-amber'); return; }
+  if(ctes <= 0) { toast('Informe a quantidade de CTEs.','t-amber'); return; }
+
+  const newId = Date.now();
+  rows.push({id:newId, nome, placa: placa||'—', ctes, realizadas:0, auditadas:0, status:'', occCodes:[], obs:''});
+
+  document.getElementById('vaMotorista').value = '';
+  document.getElementById('vaPlaca').value = '';
+  document.getElementById('vaCtes').value = '';
+
+  document.getElementById('importSection').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+
+  renderDashboard();
+  scheduleAutosave(false);
+  closeModal('modalViagemAdicional');
+  toast(`✅ Viagem adicional de ${nome} adicionada!`,'t-green');
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 08 — DARK MODE
+══════════════════════════════════════════════════════ */
+const DM_KEY = 'conf_dark_mode_v1';
+
+function initDarkMode() {
+  if(localStorage.getItem(DM_KEY) === 'on') {
+    document.body.classList.add('dark-mode');
+    document.getElementById('darkModeIcon').textContent = '☀️';
+    document.getElementById('darkModeLabel').textContent = 'Light Mode';
+  }
+}
+
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  localStorage.setItem(DM_KEY, isDark ? 'on' : 'off');
+  document.getElementById('darkModeIcon').textContent = isDark ? '☀️' : '🌙';
+  document.getElementById('darkModeLabel').textContent = isDark ? 'Light Mode' : 'Dark Mode';
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 10 — ORDENAÇÃO DAS COLUNAS DA TABELA PRINCIPAL
+══════════════════════════════════════════════════════ */
+let mainSortKey = 'ctes';
+let mainSortDir = 'desc';
+
+function updateMainTableHeaderSort() {
+  const thead = document.getElementById('mainTableHead');
+  if(!thead) return;
+  thead.querySelectorAll('th').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if(th.dataset.sort === mainSortKey) th.classList.add(mainSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  });
+}
+
+function sortMainTable(key) {
+  if(mainSortKey === key) mainSortDir = mainSortDir==='asc'?'desc':'asc';
+  else { mainSortKey = key; mainSortDir = key === 'nome' || key === 'placa' ? 'asc' : 'desc'; }
+  renderTable();
+  updateMainTableHeaderSort();
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 11 — CADASTRO DE MOTORISTAS (aba dedicada)
+══════════════════════════════════════════════════════ */
+const CAD_KEY = 'conf_cad_motoristas_v1';
+
+function loadCadDB()   { try { return JSON.parse(localStorage.getItem(CAD_KEY)||'[]'); } catch { return []; } }
+function saveCadDB(a)  { localStorage.setItem(CAD_KEY, JSON.stringify(a)); }
+
+function maskCPF(input) {
+  let v = input.value.replace(/\D/g,'').slice(0,11);
+  if(v.length > 9) v = v.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/,'$1.$2.$3-$4');
+  else if(v.length > 6) v = v.replace(/(\d{3})(\d{3})(\d{1,3})/,'$1.$2.$3');
+  else if(v.length > 3) v = v.replace(/(\d{3})(\d{1,3})/,'$1.$2');
+  input.value = v;
+}
+
+function maskPhone(input) {
+  let v = input.value.replace(/\D/g,'').slice(0,11);
+  if(v.length > 10) v = v.replace(/(\d{2})(\d{5})(\d{4})/,'($1) $2-$3');
+  else if(v.length > 6) v = v.replace(/(\d{2})(\d{4,5})(\d{0,4})/,'($1) $2-$3');
+  else if(v.length > 2) v = v.replace(/(\d{2})(\d+)/,'($1) $2');
+  input.value = v;
+}
+
+function validateCPF(cpf) {
+  cpf = cpf.replace(/\D/g,'');
+  if(cpf.length !== 11 || /^(\d)\1+$/.test(cpf)) return false;
+  let sum = 0;
+  for(let i=0;i<9;i++) sum += parseInt(cpf[i])*(10-i);
+  let d1 = (sum*10)%11; if(d1===10||d1===11) d1=0;
+  if(d1 !== parseInt(cpf[9])) return false;
+  sum = 0;
+  for(let i=0;i<10;i++) sum += parseInt(cpf[i])*(11-i);
+  let d2 = (sum*10)%11; if(d2===10||d2===11) d2=0;
+  return d2 === parseInt(cpf[10]);
+}
+
+function saveCadMotorista() {
+  const nome    = document.getElementById('cadNome').value.trim();
+  const cpf     = document.getElementById('cadCpf').value.trim();
+  const placa   = document.getElementById('cadPlaca').value.trim().toUpperCase();
+  const celular = document.getElementById('cadCelular').value.trim();
+  const editId  = document.getElementById('cadEditId').value;
+  const errEl   = document.getElementById('cadFormError');
+
+  errEl.style.display='none';
+  if(!nome) { errEl.textContent='Informe o nome do motorista.'; errEl.style.display='block'; return; }
+  if(!cpf)  { errEl.textContent='Informe o CPF.'; errEl.style.display='block'; return; }
+  if(!validateCPF(cpf)) { errEl.textContent='CPF inválido.'; errEl.style.display='block'; return; }
+
+  const db = loadCadDB();
+  const dupCPF = db.find(d => d.cpf === cpf && d.id !== (editId||null));
+  if(dupCPF) { errEl.textContent='CPF já cadastrado.'; errEl.style.display='block'; return; }
+
+  if(editId) {
+    const idx = db.findIndex(d => d.id === editId);
+    if(idx >= 0) db[idx] = {...db[idx], nome, cpf, placa, celular};
+  } else {
+    db.push({id: Date.now().toString(), nome, cpf, placa, celular});
+  }
+  saveCadDB(db);
+  clearCadForm();
+  renderCadMotoristas();
+  toast(editId ? '✅ Motorista atualizado!' : '✅ Motorista cadastrado!','t-green');
+}
+
+function clearCadForm() {
+  ['cadNome','cadCpf','cadPlaca','cadCelular','cadEditId'].forEach(id => document.getElementById(id).value='');
+  document.getElementById('cadFormTitle').textContent = '➕ Cadastrar Novo Motorista';
+  document.getElementById('cadCancelBtn').style.display = 'none';
+  document.getElementById('cadFormError').style.display = 'none';
+}
+
+function editCadMotorista(id) {
+  const db  = loadCadDB();
+  const drv = db.find(d => d.id === id);
+  if(!drv) return;
+  document.getElementById('cadEditId').value  = drv.id;
+  document.getElementById('cadNome').value    = drv.nome;
+  document.getElementById('cadCpf').value     = drv.cpf;
+  document.getElementById('cadPlaca').value   = drv.placa;
+  document.getElementById('cadCelular').value = drv.celular;
+  document.getElementById('cadFormTitle').textContent = '✏️ Editar Motorista';
+  document.getElementById('cadCancelBtn').style.display = 'inline-flex';
+  document.getElementById('cadNome').focus();
+}
+
+function deleteCadMotorista(id) {
+  if(!confirm('Excluir este motorista do cadastro?')) return;
+  saveCadDB(loadCadDB().filter(d => d.id !== id));
+  renderCadMotoristas();
+  toast('🗑️ Motorista removido.','');
+}
+
+function renderCadMotoristas() {
+  const q  = (document.getElementById('cadMotoristasSearch')?.value||'').toLowerCase();
+  const db = loadCadDB().filter(d => !q || d.nome.toLowerCase().includes(q) || d.cpf.includes(q) || d.placa.toLowerCase().includes(q));
+  const tbody = document.getElementById('cadMotoristasBody');
+  if(!db.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:48px;color:var(--text3)">${loadCadDB().length ? '🔍 Nenhum resultado para a busca.' : '📋 Nenhum motorista cadastrado ainda.'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = db.map((d,i) => `
+    <tr>
+      <td><span class="rank">${i+1}</span></td>
+      <td><span class="driver-name">${escHtml(d.nome)}</span></td>
+      <td><span style="font-size:12px;color:var(--text2);font-weight:600">${escHtml(d.cpf)}</span></td>
+      <td><span class="plate">${escHtml(d.placa||'—')}</span></td>
+      <td><span style="font-size:12px;color:var(--text2)">${escHtml(d.celular||'—')}</span></td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="editCadMotorista('${d.id}')">✏️ Editar</button>
+        <button class="btn btn-red btn-sm" onclick="deleteCadMotorista('${d.id}')">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 12 — CORREÇÃO CRÍTICA: HISTÓRICO PROTEGIDO
+══════════════════════════════════════════════════════ */
+const HIST_IMMUTABLE_KEY = 'conf_hist_immutable_v1';
+
+function loadImmutableHist() {
+  try { return JSON.parse(localStorage.getItem(HIST_IMMUTABLE_KEY)||'{}'); } catch { return {}; }
+}
+function saveImmutableHist(db) { localStorage.setItem(HIST_IMMUTABLE_KEY, JSON.stringify(db)); }
+
+// Override saveDay to use immutable storage
+const _originalSaveDay = window.saveDay;
+function saveDay() {
+  if(!rows.length) { toast('Nenhum dado para salvar.','t-red'); return; }
+  const key = todayKey();
+  const rowsNorm = rows.map(r => ({
+    ...r,
+    statusPrestacao: r.statusPrestacao || r.status || ''
+  }));
+  const entry = {date:key, rows:rowsNorm, saved:new Date().toISOString()};
+
+  // Salvar no registro mutable normal (para edição do dia corrente)
+  const dbLocal = loadDB();
+  dbLocal[key]  = entry;
+  saveDB(dbLocal);
+
+  // Salvar também no registro imutável (nunca sobrescreve conferências já finalizadas de outros dias)
+  const immutableDb = loadImmutableHist();
+  // Somente preserva entradas que não são do dia atual (dias anteriores são imutáveis)
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+  const yesterdayKey = yesterday.toISOString().slice(0,10);
+  // Para o dia corrente, sempre atualiza; para dias anteriores, preserva se já existir
+  if(!immutableDb[key] || key === todayKey()) {
+    immutableDb[key] = {...entry, _locked: false};
+  }
+  saveImmutableHist(immutableDb);
+
+  // cloud
+  if(window.fbSaveToday) window.fbSaveToday(rowsNorm);
+  toast('✅ Conferência salva e protegida!','t-green');
+}
+
+// Protege entradas antigas do dia anterior em diante
+function lockPreviousDays() {
+  const key = todayKey();
+  const immDb = loadImmutableHist();
+  let changed = false;
+  Object.keys(immDb).forEach(k => {
+    if(k < key && !immDb[k]._locked) {
+      immDb[k]._locked = true;
+      changed = true;
+    }
+  });
+  if(changed) saveImmutableHist(immDb);
+}
+
+/* ══════════════════════════════════════════════════════
+   INIT ADICIONAIS
+══════════════════════════════════════════════════════ */
+// Patch renderTable to support column sorting
+const _originalRenderTable = renderTable;
+function renderTable() {
+  const tbody = document.getElementById('mainTable');
+  tbody.innerHTML = '';
+
+  const getSortVal = (r, k) => {
+    if(k==='nome') return r.nome.toLowerCase();
+    if(k==='placa') return (r.placa||'').toLowerCase();
+    if(k==='ctes') return r.ctes||0;
+    if(k==='status') return r.status||'';
+    return r.ctes||0;
+  };
+
+  const sorted = [...rows].sort((a,b) => {
+    const va = getSortVal(a, mainSortKey);
+    const vb = getSortVal(b, mainSortKey);
+    if(typeof va === 'string') return mainSortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return mainSortDir === 'asc' ? va - vb : vb - va;
+  });
+
+  sorted.forEach((r, i) => {
+    const hasOcc      = r.occCodes && r.occCodes.length > 0;
+    const statusFilled = !!r.status;
+    const tr = document.createElement('tr');
+    tr.dataset.name = r.nome.toLowerCase();
+    tr.innerHTML = `
+      <td><span class="rank">${i+1}</span></td>
+      <td><span class="driver-name">${r.nome}</span></td>
+      <td><span class="plate">${r.placa||'—'}</span></td>
+      <td><span class="cte-num">${r.ctes}</span></td>
+      <td>
+        <select class="sel-status ${r.status==='Retornou'?'st-ret':r.status==='Não Retornou'?'st-nret':''}"
+          onchange="onStatusChange(${r.id}, this)">
+          <option value=""      ${!r.status?'selected':''}>— Aguardando —</option>
+          <option value="Retornou"      ${r.status==='Retornou'?'selected':''}>✅ Retornou</option>
+          <option value="Não Retornou"  ${r.status==='Não Retornou'?'selected':''}>❌ Não Retornou</option>
+        </select>
+      </td>
+      <td class="occ-cell" id="occ-cell-${r.id}">
+        ${buildOccPicker(r, statusFilled)}
+      </td>
+      <td>
+        <span class="pct-badge ${hasOcc?'has-val':''}" id="pct-${r.id}">
+          ${hasOcc ? r.occCodes.length + ' ocorr.' : '—'}
+        </span>
+      </td>
+      <td>
+        <input class="inp-obs" type="text" placeholder="Observação..."
+          value="${escHtml(r.obs)}" ${!statusFilled?'disabled title="Preencha o status de prestação primeiro"':''}
+          id="obs-inp-${r.id}"
+          oninput="onObsChange(${r.id}, this)">
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// Update thead to add id and sort handlers
+document.addEventListener('DOMContentLoaded', () => {
+  initDarkMode();
+  lockPreviousDays();
+
+  // Add sortable headers to main table
+  const thead = document.querySelector('#mainTable')?.closest('table')?.querySelector('thead tr');
+  if(thead) {
+    thead.id = 'mainTableHead';
+    const cols = [null,'nome','placa','ctes','status',null,null,null];
+    thead.querySelectorAll('th').forEach((th,i) => {
+      if(cols[i]) {
+        th.dataset.sort = cols[i];
+        th.classList.add('sortable');
+        th.title = 'Clique para ordenar';
+        th.onclick = () => sortMainTable(cols[i]);
+      }
+    });
+  }
+});
+
+</script>
+</body>
+</html>
