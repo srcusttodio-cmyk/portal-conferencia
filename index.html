@@ -1664,73 +1664,123 @@ th[data-sort].sort-desc::after { content:' ↓'; color:var(--accent); }
 <!-- ═══ CARGAS PENDENTES PAGE ═══ -->
 <div id="page-cargas" class="page">
 <main>
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-    <h2 style="font-size:20px;font-weight:800">📋 Cargas Pendentes de Entrega</h2>
-    <div style="display:flex;gap:8px">
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="font-size:20px;font-weight:800">🚚 Cargas Pendentes de Entrega</h2>
+      <p style="font-size:12px;color:var(--text3);margin-top:2px">Importe a planilha e use o beep para consultar qualquer CTE instantaneamente</p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="document.getElementById('cargasFileInput').click()" style="gap:10px">
+        <span style="font-size:16px">📥</span> Importar Planilha
+      </button>
+      <input type="file" id="cargasFileInput" accept=".xlsx,.xls" style="display:none" onchange="loadCargasFile(this.files[0])">
       <button class="btn btn-outline btn-sm" onclick="exportCargasXLSX()">⬇️ Exportar</button>
       <button class="btn btn-red btn-sm" onclick="if(confirm('Limpar todas as cargas importadas?'))limparCargas()">🗑️ Limpar</button>
     </div>
   </div>
 
-  <!-- Scanner -->
-  <div class="scanner-bar">
-    <span style="font-size:20px">🔊</span>
-    <span style="font-weight:700;font-size:13px;color:var(--accent);white-space:nowrap">Beep / Scanner:</span>
-    <input type="text" id="cargaScanner" placeholder="Escaneie ou digite o CTE para localizar na lista..." autocomplete="off"
-      oninput="scanCarga(this.value)" onkeydown="if(event.key==='Enter')scanCarga(this.value,true)">
-    <button class="btn btn-primary btn-sm" onclick="scanCarga(document.getElementById('cargaScanner').value,true)">🔍 Buscar</button>
+  <!-- ESTADO VAZIO: mostrar drop zone grande quando não tem dados -->
+  <div id="cargasEmptyState" style="display:none">
+    <div class="cargas-import-zone" id="cargasImportZone"
+      onclick="document.getElementById('cargasFileInput').click()"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="handleCargasDrop(event)">
+      <div style="font-size:52px;margin-bottom:14px">📥</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:6px">Nenhuma planilha importada ainda</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px">Clique aqui ou arraste o arquivo <strong>.xlsx</strong> para importar</div>
+      <button class="btn btn-primary btn-lg" style="pointer-events:none">
+        📥 Selecionar Planilha de Cargas
+      </button>
+      <p style="font-size:11px;color:var(--text3);margin-top:16px;max-width:600px">
+        Campos suportados: <strong>unidade_destino · cte · praca_destino · setor · valor_cte · valor_frete · peso · volume · m3 · bairro · previsao · data_bip · data_chegada · manifesto_entrega · remetente · destinatario · placa_pre_viagem · data_pre_viagem · bo · acr</strong>
+      </p>
+    </div>
   </div>
 
-  <!-- Import zone -->
-  <div class="cargas-import-zone" id="cargasImportZone"
-    onclick="document.getElementById('cargasFileInput').click()"
-    ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
-    ondragleave="this.style.borderColor=''"
-    ondrop="handleCargasDrop(event)">
-    <div style="font-size:36px;margin-bottom:10px">📊</div>
-    <div style="font-size:15px;font-weight:700;color:var(--text2)">Importar planilha de cargas pendentes</div>
-    <p style="font-size:12px;color:var(--text3);margin-top:6px">Colunas: unidade_destino, cte, praca_destino, setor, valor_cte, valor_frete, peso, volume, m3, bairro, previsao, data_bip, data_chegada, manifesto_entrega, remetente, destinatario, placa_pre_viagem, data_pre_viagem, bo, acr</p>
-    <input type="file" id="cargasFileInput" accept=".xlsx,.xls" style="display:none" onchange="loadCargasFile(this.files[0])">
-  </div>
-  <div id="cargasImportInfo" style="display:none;margin-bottom:16px"></div>
+  <!-- ESTADO COM DADOS -->
+  <div id="cargasDataState" style="display:none">
 
-  <!-- Filtros -->
-  <div class="cargas-filter-bar">
-    <input type="text" id="cargaSearch" placeholder="🔍 Buscar por CTE, destinatário, bairro..." oninput="renderCargas()" style="min-width:260px">
-    <select id="cargaFilterUnidade" onchange="renderCargas()"><option value="">Todas as unidades</option></select>
-    <select id="cargaFilterBairro"  onchange="renderCargas()"><option value="">Todos os bairros</option></select>
-    <span id="cargaCount" style="font-size:12px;color:var(--text3)"></span>
-  </div>
+    <!-- BEEP / SCANNER — destaque principal -->
+    <div class="scanner-bar" style="margin-bottom:20px">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <span style="font-size:22px">🔊</span>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:13px;color:var(--accent);margin-bottom:4px">BEEP / SCANNER — Consulta rápida de CTE</div>
+        <input type="text" id="cargaScanner"
+          placeholder="Bipe ou digite o número do CTE aqui (ex: 125/748544)..."
+          autocomplete="off" style="width:100%;padding:12px 16px;border:2px solid var(--accent);border-radius:10px;font-size:15px;font-family:inherit;outline:none;background:var(--surface)"
+          oninput="scanCargaLive(this.value)"
+          onkeydown="if(event.key==='Enter'){scanCargaModal(this.value);this.select()}"
+          onfocus="this.select()">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Pressione <strong>Enter</strong> para ver ficha completa do CTE · ou pesquise na tabela abaixo</div>
+      </div>
+      <button class="btn btn-primary" onclick="scanCargaModal(document.getElementById('cargaScanner').value)" style="white-space:nowrap">
+        🔍 Ver Ficha
+      </button>
+    </div>
 
-  <!-- KPIs rápidos -->
-  <div id="cargasKpis" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+    <!-- STATUS DA ÚLTIMA IMPORTAÇÃO -->
+    <div id="cargasImportInfo" style="display:none;margin-bottom:16px"></div>
 
-  <!-- Tabela -->
-  <div class="cargas-table-wrap">
-    <table class="cargas-table">
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>CTE</th>
-          <th>Unidade Destino</th>
-          <th>Praça Destino</th>
-          <th>Setor</th>
-          <th>Bairro</th>
-          <th>Destinatário</th>
-          <th>Remetente</th>
-          <th>Valor CTE</th>
-          <th>Peso</th>
-          <th>Volume</th>
-          <th>Previsão</th>
-          <th>Manifesto Entrega</th>
-          <th>Placa</th>
-          <th>BO</th>
-        </tr>
-      </thead>
-      <tbody id="cargasBody"></tbody>
-    </table>
-  </div>
+    <!-- KPIs -->
+    <div id="cargasKpis" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+    <!-- FILTROS -->
+    <div class="cargas-filter-bar">
+      <input type="text" id="cargaSearch" placeholder="🔍 Buscar por CTE, destinatário, bairro, remetente..." oninput="renderCargas()" style="min-width:280px;flex:1">
+      <select id="cargaFilterUnidade" onchange="renderCargas()"><option value="">Todas as unidades</option></select>
+      <select id="cargaFilterBairro"  onchange="renderCargas()"><option value="">Todos os bairros</option></select>
+      <span id="cargaCount" style="font-size:12px;color:var(--text3);white-space:nowrap"></span>
+    </div>
+
+    <!-- TABELA -->
+    <div class="cargas-table-wrap">
+      <table class="cargas-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>CTE</th>
+            <th>Unidade Destino</th>
+            <th>Praça Destino</th>
+            <th>Setor</th>
+            <th>Bairro</th>
+            <th>Destinatário</th>
+            <th>Remetente</th>
+            <th>Valor CTE</th>
+            <th>Peso</th>
+            <th>Volume</th>
+            <th>Previsão</th>
+            <th>Manifesto</th>
+            <th>Placa</th>
+            <th>BO</th>
+            <th>ACR</th>
+          </tr>
+        </thead>
+        <tbody id="cargasBody"></tbody>
+      </table>
+    </div>
+
+  </div><!-- /cargasDataState -->
+
 </main>
+</div>
+
+<!-- MODAL FICHA DO CTE (resultado do beep) -->
+<div class="overlay" id="modalFichaCte">
+  <div class="modal" style="max-width:640px;width:96%">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h2 style="font-size:18px;font-weight:800">📦 Ficha do CTE</h2>
+      <button class="modal-close-btn" onclick="closeModal('modalFichaCte')">✕</button>
+    </div>
+    <div id="fichaCteContent"></div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-outline" onclick="closeModal('modalFichaCte');document.getElementById('cargaScanner').focus()">Fechar e continuar bipando</button>
+    </div>
+  </div>
 </div>
 
 <!-- AUTOSAVE INDICATOR -->
@@ -1780,7 +1830,7 @@ th[data-sort].sort-desc::after { content:' ↓'; color:var(--accent); }
   <div class="tab"        id="tab-occreport" onclick="showPage('occreport')">📊 Ocorrências</div>
   <div class="tab"        id="tab-occtypes"  onclick="showPage('occtypes')">⚙️ Tipos de Ocorrência</div>
   <div class="tab"        id="tab-retidos"   onclick="showPage('retidos')">🔒 CTEs Retidos</div>
-  <div class="tab"        id="tab-cargas"    onclick="showPage('cargas')">📋 Cargas Pendentes</div>
+  <div class="tab"        id="tab-cargas"    onclick="showPage('cargas')">🚚 Cargas Pendentes</div>
 </nav>
 
 <!-- ═══ TODAY PAGE ═══ -->
@@ -2421,7 +2471,7 @@ function updateDatePill() {
    PAGE NAVIGATION
 ══════════════════════════════════════════════════════ */
 function showPage(name) {
-  const allPages = ['today','history','occreport','occtypes','ranking','conclusao','pendentes','dashboard_mgr','cadmotoristas','exportacao'];
+  const allPages = ['today','history','occreport','occtypes','ranking','conclusao','pendentes','dashboard_mgr','cadmotoristas','exportacao','retidos','cargas'];
   allPages.forEach(p => {
     const pg = document.getElementById('page-'+p);
     const tb = document.getElementById('tab-'+p);
@@ -2436,6 +2486,13 @@ function showPage(name) {
   if(name==='pendentes')      renderPendentes();
   if(name==='dashboard_mgr')  renderMgrDashboard();
   if(name==='cadmotoristas')  renderCadMotoristas();
+  if(name==='retidos')        renderRetidos();
+  if(name==='cargas') {
+    const db = loadCargasDB();
+    populateCargasFilters(db);
+    renderCargas();
+    if(db.length) setTimeout(()=>document.getElementById('cargaScanner')?.focus(), 200);
+  }
 }
 
 /* ══════════════════════════════════════════════════════
@@ -4881,6 +4938,16 @@ function renderCargasKpis(db) {
 
 function renderCargas() {
   const db  = loadCargasDB();
+
+  // Toggle empty / data state
+  const emptyEl = document.getElementById('cargasEmptyState');
+  const dataEl  = document.getElementById('cargasDataState');
+  if(emptyEl && dataEl) {
+    emptyEl.style.display = db.length ? 'none' : 'block';
+    dataEl.style.display  = db.length ? 'block' : 'none';
+  }
+  if(!db.length) return;
+
   const q   = (document.getElementById('cargaSearch')?.value||'').toLowerCase();
   const fu  = document.getElementById('cargaFilterUnidade')?.value||'';
   const fb  = document.getElementById('cargaFilterBairro')?.value||'';
@@ -4918,19 +4985,90 @@ function renderCargas() {
     <td style="font-size:11px">${escHtml(r.manifesto_entrega)}</td>
     <td><span class="plate">${escHtml(r.placa_pre_viagem)||'—'}</span></td>
     <td style="font-size:11px">${escHtml(r.bo)}</td>
+    <td style="font-size:11px">${escHtml(r.acr)}</td>
   </tr>`).join('');
 }
 
-function scanCarga(val, confirm=false) {
-  if(!val || val.length < 2) return;
+function scanCarga(val, doConfirm=false) {
+  scanCargaLive(val);
+  if(doConfirm) scanCargaModal(val);
+}
+
+// Live filter: atualiza tabela enquanto digita
+function scanCargaLive(val) {
+  if(!val) { renderCargas(); return; }
+  const inp = document.getElementById('cargaSearch');
+  if(inp) { inp.value = val; renderCargas(); }
+}
+
+// Modal: abre ficha completa do CTE ao pressionar Enter ou clicar "Ver Ficha"
+function scanCargaModal(val) {
+  val = (val||'').trim();
+  if(!val) return;
   const db = loadCargasDB();
-  const found = db.filter(r => r.cte.includes(val.trim()) || r.destinatario.toLowerCase().includes(val.toLowerCase()));
-  if(confirm && !found.length) { toast('❌ CTE não encontrado nas cargas pendentes.','t-red'); return; }
-  if(found.length > 0) {
-    document.getElementById('cargaSearch').value = val;
-    renderCargas();
-    if(confirm) toast(`🔍 ${found.length} carga(s) encontrada(s).`,'t-green');
+
+  // Busca exata primeiro, depois parcial
+  let found = db.filter(r => r.cte === val);
+  if(!found.length) found = db.filter(r => r.cte.includes(val));
+  if(!found.length) found = db.filter(r =>
+    r.destinatario.toLowerCase().includes(val.toLowerCase()) ||
+    r.remetente.toLowerCase().includes(val.toLowerCase())
+  );
+
+  const el = document.getElementById('fichaCteContent');
+  if(!found.length) {
+    el.innerHTML = `<div style="text-align:center;padding:32px">
+      <div style="font-size:48px;margin-bottom:12px">❌</div>
+      <div style="font-weight:700;font-size:16px;color:var(--red)">CTE não encontrado</div>
+      <p style="font-size:13px;color:var(--text2);margin-top:8px">Nenhuma carga com o código <strong>${escHtml(val)}</strong> foi encontrada na planilha importada.</p>
+    </div>`;
+    openModal('modalFichaCte');
+    return;
   }
+
+  const fmtMoney = v => v ? 'R$ '+parseFloat(v).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
+  const fmtNum   = v => v ? parseFloat(v).toLocaleString('pt-BR') : '—';
+
+  el.innerHTML = found.map(r => `
+    <div style="background:var(--accent-bg);border:1px solid #bfdbfe;border-radius:12px;padding:16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <span style="font-size:22px;font-weight:900;color:var(--accent);font-family:monospace">${escHtml(r.cte)}</span>
+        <span style="font-size:11px;color:var(--text3)">Importado em ${new Date(r.importadoEm).toLocaleDateString('pt-BR')}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        ${fichaField('🏢 Unidade Destino', r.unidade_destino)}
+        ${fichaField('📍 Praça Destino', r.praca_destino)}
+        ${fichaField('🏘️ Bairro', r.bairro)}
+        ${fichaField('🔢 Setor', r.setor)}
+        ${fichaField('💰 Valor CTE', fmtMoney(r.valor_cte))}
+        ${fichaField('🚚 Valor Frete', fmtMoney(r.valor_frete))}
+        ${fichaField('⚖️ Peso', r.peso ? fmtNum(r.peso)+' kg' : '—')}
+        ${fichaField('📦 Volume', fmtNum(r.volume))}
+        ${fichaField('📐 M³', fmtNum(r.m3))}
+        ${fichaField('📅 Previsão', r.previsao)}
+        ${fichaField('📅 Data BIP', r.data_bip)}
+        ${fichaField('📅 Data Chegada', r.data_chegada)}
+        ${fichaField('📋 Manifesto', r.manifesto_entrega)}
+        ${fichaField('🚗 Placa', r.placa_pre_viagem)}
+        ${fichaField('📁 BO', r.bo)}
+        ${fichaField('🔑 ACR', r.acr)}
+      </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #bfdbfe">
+        ${fichaField('📤 Remetente', r.remetente, true)}
+        ${fichaField('📥 Destinatário', r.destinatario, true)}
+      </div>
+    </div>
+  `).join('');
+
+  openModal('modalFichaCte');
+}
+
+function fichaField(label, value, full=false) {
+  if(!value || value === '—' || value === '' || value === '0') value = '—';
+  return `<div style="${full?'grid-column:1/-1;':''}background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+    <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">${escHtml(label)}</div>
+    <div style="font-size:13px;font-weight:600;color:var(--text);word-break:break-word">${escHtml((value||'—').toString())}</div>
+  </div>`;
 }
 
 function exportCargasXLSX() {
@@ -4969,10 +5107,6 @@ window._showPageExtended = function(pg) {
 // Hook into tab switches
 document.addEventListener('DOMContentLoaded', () => {
   initRetidosFromTxt();
-  document.getElementById('tab-retidos')?.addEventListener('click', () => { renderRetidos(); });
-  document.getElementById('tab-cargas')?.addEventListener('click', () => {
-    const db = loadCargasDB(); populateCargasFilters(db); renderCargas();
-  });
   // Set today's date default in retido form
   const today = new Date().toISOString().slice(0,10);
   const retDataEnvio = document.getElementById('retDataEnvio');
@@ -4982,7 +5116,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <!-- PORTAL FOOTER -->
 <footer class="portal-footer">
-  Portal de Conferência de Entregas &nbsp;|&nbsp; <strong>v2.0.0</strong> &nbsp;|&nbsp; Mindset7 Studio &nbsp;|&nbsp; 2026
+  Portal de Conferência de Entregas &nbsp;|&nbsp; <strong>v3.0.0</strong> &nbsp;|&nbsp; Mindset7 Studio &nbsp;|&nbsp; 2026
 </footer>
 
 </body>
