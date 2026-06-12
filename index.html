@@ -1420,6 +1420,104 @@ th[data-sort].sort-desc::after { content:' ↓'; color:var(--accent); }
   }
 }
 
+
+/* ══════════════════════════════════════════════════
+   FOOTER VERSION
+══════════════════════════════════════════════════ */
+.portal-footer {
+  text-align: center; padding: 18px; font-size: 11px;
+  color: var(--text3); border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+.portal-footer strong { color: var(--accent); }
+
+/* ══════════════════════════════════════════════════
+   POST-LOGIN DASHBOARD (Welcome Screen)
+══════════════════════════════════════════════════ */
+#welcomeScreen {
+  position: fixed; inset: 0; z-index: 9000;
+  background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 24px; padding: 32px;
+}
+#welcomeScreen.hidden { display: none; }
+.welcome-title { font-size: 28px; font-weight: 800; color: var(--text); letter-spacing: -.5px; }
+.welcome-sub { font-size: 14px; color: var(--text2); margin-top: -12px; }
+.welcome-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; width: 100%; max-width: 900px; }
+.welcome-kpi {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px 20px; text-align: center;
+  box-shadow: var(--shadow-md); transition: transform .2s;
+}
+.welcome-kpi:hover { transform: translateY(-3px); }
+.welcome-kpi-icon { font-size: 36px; margin-bottom: 8px; }
+.welcome-kpi-val { font-size: 32px; font-weight: 800; color: var(--accent); }
+.welcome-kpi-label { font-size: 12px; color: var(--text2); font-weight: 600; margin-top: 4px; }
+.welcome-enter-btn {
+  margin-top: 8px; padding: 14px 40px;
+  background: linear-gradient(135deg, #2563EB, #7C3AED);
+  color: #fff; border: none; border-radius: 14px;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 8px 24px rgba(37,99,235,.4);
+  transition: all .2s;
+}
+.welcome-enter-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(37,99,235,.5); }
+
+/* ══════════════════════════════════════════════════
+   CTEs RETIDOS
+══════════════════════════════════════════════════ */
+.retido-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.retido-field label { display: block; font-size: 11px; font-weight: 700; color: var(--text2); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .5px; }
+.retido-field input, .retido-field select, .retido-field textarea {
+  width: 100%; padding: 10px 14px; border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 13px; color: var(--text);
+  background: var(--surface); outline: none; transition: border-color .2s;
+  font-family: inherit;
+}
+.retido-field input:focus, .retido-field select:focus, .retido-field textarea:focus { border-color: var(--accent); }
+.retido-field input.required-invalid { border-color: var(--red) !important; }
+.retido-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+.retido-badge-pendente { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-bd); }
+.retido-badge-coletado { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-bd); }
+.retido-badge-liberado  { background: var(--accent-bg); color: var(--accent); border: 1px solid #bfdbfe; }
+.retidos-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.retidos-table th { background: var(--card-alt); padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; border-bottom: 2px solid var(--border); }
+.retidos-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.retidos-table tr:hover td { background: var(--card-alt); }
+
+/* ══════════════════════════════════════════════════
+   CARGAS PENDENTES
+══════════════════════════════════════════════════ */
+.cargas-import-zone {
+  border: 2px dashed var(--border2); border-radius: var(--radius);
+  padding: 40px; text-align: center; cursor: pointer;
+  transition: all .2s; background: var(--card-alt);
+  margin-bottom: 20px;
+}
+.cargas-import-zone:hover { border-color: var(--accent); background: var(--accent-bg); }
+.cargas-filter-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
+.cargas-filter-bar input, .cargas-filter-bar select {
+  padding: 9px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--text); background: var(--surface); outline: none;
+  font-family: inherit; transition: border-color .2s;
+}
+.cargas-filter-bar input:focus, .cargas-filter-bar select:focus { border-color: var(--accent); }
+.cargas-table-wrap { overflow-x: auto; }
+.cargas-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1200px; }
+.cargas-table th { background: var(--card-alt); padding: 9px 10px; text-align: left; font-size: 10px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .5px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+.cargas-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+.cargas-table tr:hover td { background: var(--card-alt); }
+.scanner-bar {
+  display: flex; gap: 10px; align-items: center; margin-bottom: 16px;
+  background: linear-gradient(135deg, var(--accent-bg), #F5F3FF);
+  border: 1px solid #bfdbfe; border-radius: var(--radius); padding: 14px 18px;
+}
+.scanner-bar input {
+  flex: 1; padding: 10px 14px; border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 14px; font-family: inherit;
+  outline: none; transition: border-color .2s;
+}
+.scanner-bar input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
 </style>
 </head>
 <body>
@@ -1453,6 +1551,186 @@ th[data-sort].sort-desc::after { content:' ↓'; color:var(--accent); }
       </div>
     </div>
   </div>
+</div>
+
+
+<!-- WELCOME SCREEN (pós-login) -->
+<div id="welcomeScreen" class="hidden">
+  <div class="welcome-title">🚚 Bem-vindo ao Portal</div>
+  <div class="welcome-sub" id="welcomeDate"></div>
+  <div class="welcome-grid" id="welcomeGrid">
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">📦</div><div class="welcome-kpi-val" id="wk-ctes">—</div><div class="welcome-kpi-label">CTEs no Sistema</div></div>
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">🚩</div><div class="welcome-kpi-val" id="wk-occ">—</div><div class="welcome-kpi-label">Ocorrências</div></div>
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">🗓️</div><div class="welcome-kpi-val" id="wk-viagens">—</div><div class="welcome-kpi-label">Viagens Realizadas</div></div>
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">🔒</div><div class="welcome-kpi-val" id="wk-retidos">—</div><div class="welcome-kpi-label">CTEs Retidos</div></div>
+  </div>
+  <button class="welcome-enter-btn" onclick="enterPortal()">Acessar Portal →</button>
+</div>
+
+<!-- ═══ CTES RETIDOS PAGE ═══ -->
+<div id="page-retidos" class="page">
+<main>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <h2 style="font-size:20px;font-weight:800">🔒 CTEs Retidos — Enviados para Coleta de Assinatura</h2>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="exportRetidosXLSX()">⬇️ Exportar</button>
+    </div>
+  </div>
+
+  <!-- Scanner bar -->
+  <div class="scanner-bar">
+    <span style="font-size:20px">🔊</span>
+    <span style="font-weight:700;font-size:13px;color:var(--accent);white-space:nowrap">Beep / Scanner:</span>
+    <input type="text" id="retidoScanner" placeholder="Escaneie ou digite o número do CTE para buscar cliente..." autocomplete="off"
+      oninput="scanRetido(this.value)" onkeydown="if(event.key==='Enter')scanRetido(this.value,true)">
+    <button class="btn btn-primary btn-sm" onclick="scanRetido(document.getElementById('retidoScanner').value,true)">🔍 Buscar</button>
+  </div>
+
+  <!-- Formulário de cadastro -->
+  <div class="occ-panel" style="margin-bottom:20px">
+    <div class="occ-panel-head"><h3>➕ Registrar CTE Retido</h3></div>
+    <div class="occ-panel-body">
+      <div class="retido-form-grid">
+        <div class="retido-field">
+          <label>Nº CTE Retido <span style="color:var(--red)">*</span></label>
+          <input type="text" id="retNumeroCte" placeholder="Ex: 66/8346495" maxlength="30"
+            oninput="this.value=this.value.replace(/[^0-9\/\-]/g,'')">
+        </div>
+        <div class="retido-field">
+          <label>Cliente / Destinatário <span style="color:var(--red)">*</span></label>
+          <input type="text" id="retCliente" placeholder="Nome do cliente" maxlength="100" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="retido-field">
+          <label>Data de Envio <span style="color:var(--red)">*</span></label>
+          <input type="date" id="retDataEnvio">
+        </div>
+        <div class="retido-field">
+          <label>Data de Coleta</label>
+          <input type="date" id="retDataColeta">
+        </div>
+        <div class="retido-field">
+          <label>Status</label>
+          <select id="retStatus">
+            <option value="pendente">⏳ Pendente</option>
+            <option value="coletado">✅ Coletado</option>
+            <option value="liberado">🔓 Liberado</option>
+          </select>
+        </div>
+        <div class="retido-field">
+          <label>Observação</label>
+          <input type="text" id="retObs" placeholder="Ex: Reenviando em 10/06" maxlength="200">
+        </div>
+      </div>
+      <div id="retFormError" style="color:var(--red);font-size:12px;display:none;margin-bottom:8px"></div>
+      <button class="btn btn-primary" onclick="saveRetido()">💾 Registrar CTE Retido</button>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="cargas-filter-bar">
+    <input type="text" id="retSearch" placeholder="🔍 Buscar por CTE ou cliente..." oninput="renderRetidos()" style="min-width:240px">
+    <select id="retFilterStatus" onchange="renderRetidos()">
+      <option value="">Todos os status</option>
+      <option value="pendente">⏳ Pendente</option>
+      <option value="coletado">✅ Coletado</option>
+      <option value="liberado">🔓 Liberado</option>
+    </select>
+    <span id="retCount" style="font-size:12px;color:var(--text3)"></span>
+  </div>
+
+  <!-- Tabela -->
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table class="retidos-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nº CTE</th>
+            <th>Cliente</th>
+            <th>Data Envio</th>
+            <th>Data Coleta</th>
+            <th>Status</th>
+            <th>Observação</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="retidosBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ CARGAS PENDENTES PAGE ═══ -->
+<div id="page-cargas" class="page">
+<main>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <h2 style="font-size:20px;font-weight:800">📋 Cargas Pendentes de Entrega</h2>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="exportCargasXLSX()">⬇️ Exportar</button>
+      <button class="btn btn-red btn-sm" onclick="if(confirm('Limpar todas as cargas importadas?'))limparCargas()">🗑️ Limpar</button>
+    </div>
+  </div>
+
+  <!-- Scanner -->
+  <div class="scanner-bar">
+    <span style="font-size:20px">🔊</span>
+    <span style="font-weight:700;font-size:13px;color:var(--accent);white-space:nowrap">Beep / Scanner:</span>
+    <input type="text" id="cargaScanner" placeholder="Escaneie ou digite o CTE para localizar na lista..." autocomplete="off"
+      oninput="scanCarga(this.value)" onkeydown="if(event.key==='Enter')scanCarga(this.value,true)">
+    <button class="btn btn-primary btn-sm" onclick="scanCarga(document.getElementById('cargaScanner').value,true)">🔍 Buscar</button>
+  </div>
+
+  <!-- Import zone -->
+  <div class="cargas-import-zone" id="cargasImportZone"
+    onclick="document.getElementById('cargasFileInput').click()"
+    ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+    ondragleave="this.style.borderColor=''"
+    ondrop="handleCargasDrop(event)">
+    <div style="font-size:36px;margin-bottom:10px">📊</div>
+    <div style="font-size:15px;font-weight:700;color:var(--text2)">Importar planilha de cargas pendentes</div>
+    <p style="font-size:12px;color:var(--text3);margin-top:6px">Colunas: unidade_destino, cte, praca_destino, setor, valor_cte, valor_frete, peso, volume, m3, bairro, previsao, data_bip, data_chegada, manifesto_entrega, remetente, destinatario, placa_pre_viagem, data_pre_viagem, bo, acr</p>
+    <input type="file" id="cargasFileInput" accept=".xlsx,.xls" style="display:none" onchange="loadCargasFile(this.files[0])">
+  </div>
+  <div id="cargasImportInfo" style="display:none;margin-bottom:16px"></div>
+
+  <!-- Filtros -->
+  <div class="cargas-filter-bar">
+    <input type="text" id="cargaSearch" placeholder="🔍 Buscar por CTE, destinatário, bairro..." oninput="renderCargas()" style="min-width:260px">
+    <select id="cargaFilterUnidade" onchange="renderCargas()"><option value="">Todas as unidades</option></select>
+    <select id="cargaFilterBairro"  onchange="renderCargas()"><option value="">Todos os bairros</option></select>
+    <span id="cargaCount" style="font-size:12px;color:var(--text3)"></span>
+  </div>
+
+  <!-- KPIs rápidos -->
+  <div id="cargasKpis" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+  <!-- Tabela -->
+  <div class="cargas-table-wrap">
+    <table class="cargas-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>CTE</th>
+          <th>Unidade Destino</th>
+          <th>Praça Destino</th>
+          <th>Setor</th>
+          <th>Bairro</th>
+          <th>Destinatário</th>
+          <th>Remetente</th>
+          <th>Valor CTE</th>
+          <th>Peso</th>
+          <th>Volume</th>
+          <th>Previsão</th>
+          <th>Manifesto Entrega</th>
+          <th>Placa</th>
+          <th>BO</th>
+        </tr>
+      </thead>
+      <tbody id="cargasBody"></tbody>
+    </table>
+  </div>
+</main>
 </div>
 
 <!-- AUTOSAVE INDICATOR -->
@@ -1501,6 +1779,8 @@ th[data-sort].sort-desc::after { content:' ↓'; color:var(--accent); }
   <div class="tab"        id="tab-exportacao" onclick="showPage('exportacao')">⬇️ Exportação</div>
   <div class="tab"        id="tab-occreport" onclick="showPage('occreport')">📊 Ocorrências</div>
   <div class="tab"        id="tab-occtypes"  onclick="showPage('occtypes')">⚙️ Tipos de Ocorrência</div>
+  <div class="tab"        id="tab-retidos"   onclick="showPage('retidos')">🔒 CTEs Retidos</div>
+  <div class="tab"        id="tab-cargas"    onclick="showPage('cargas')">📋 Cargas Pendentes</div>
 </nav>
 
 <!-- ═══ TODAY PAGE ═══ -->
@@ -2924,6 +3204,11 @@ function openPendingDay() {
 ══════════════════════════════════════════════════════ */
 function saveDay() {
   if(!rows.length) { toast('Nenhum dado para salvar.','t-red'); return; }
+  // Se estiver editando uma data histórica, redirecionar para saveHistEdit
+  if(_editingHistKey && _editingHistKey !== todayKey()) {
+    saveHistEdit(_editingHistKey);
+    return;
+  }
   const key = todayKey();
   // normalizar: garantir statusPrestacao para compatibilidade com PWA mobile
   const rowsNorm = rows.map(r => ({
@@ -2995,6 +3280,10 @@ async function renderHistory() {
   }).join('');
 }
 
+// Chave temporária para edição de dias anteriores
+let _editingHistKey = null;
+let _todayRowsBackup = null;
+
 function loadHistEntry(key, recData) {
   let rec = recData;
   if(!rec) {
@@ -3002,15 +3291,86 @@ function loadHistEntry(key, recData) {
     rec = dbLocal[key];
   }
   if(!rec) return;
-  rows = rec.rows;
-  document.getElementById('importSection').style.display = 'none';
-  document.getElementById('dashboard').style.display     = 'block';
-  renderDashboard();
-  const d = new Date(key+'T12:00:00');
-  document.getElementById('datePill').textContent =
-    d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
-  showPage('today');
-  toast(`📋 Conferência de ${d.toLocaleDateString('pt-BR')} carregada.`,'t-green');
+
+  const today = todayKey();
+  if(key !== today) {
+    // Salvar dados do dia atual em backup para restaurar depois
+    _editingHistKey = key;
+    _todayRowsBackup = rows.length ? [...rows] : null;
+    rows = rec.rows.map(r => ({...r})); // cópia independente
+    document.getElementById('importSection').style.display = 'none';
+    document.getElementById('dashboard').style.display     = 'block';
+    renderDashboard();
+    const d = new Date(key+'T12:00:00');
+    document.getElementById('datePill').textContent =
+      '⚠️ EDITANDO: ' + d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
+    // mostrar banner de aviso
+    showHistEditBanner(key, d);
+    showPage('today');
+    toast(`📋 Editando conferência de ${d.toLocaleDateString('pt-BR')} — salve para confirmar.`,'t-amber');
+  } else {
+    _editingHistKey = null;
+    rows = rec.rows;
+    document.getElementById('importSection').style.display = 'none';
+    document.getElementById('dashboard').style.display     = 'block';
+    renderDashboard();
+    const d = new Date(key+'T12:00:00');
+    document.getElementById('datePill').textContent =
+      d.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short',year:'numeric'});
+    showPage('today');
+    toast(`📋 Conferência de hoje carregada.`,'t-green');
+  }
+}
+
+function showHistEditBanner(key, dateObj) {
+  let banner = document.getElementById('histEditBanner');
+  if(!banner) {
+    banner = document.createElement('div');
+    banner.id = 'histEditBanner';
+    banner.style.cssText = 'position:fixed;top:68px;left:0;right:0;background:#F59E0B;color:#fff;padding:10px 20px;font-size:13px;font-weight:700;z-index:300;display:flex;align-items:center;justify-content:space-between;gap:12px;';
+    document.body.appendChild(banner);
+  }
+  banner.innerHTML = `
+    <span>⚠️ Você está editando a conferência de ${dateObj.toLocaleDateString('pt-BR')} — alterações serão salvas SOMENTE nessa data.</span>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveHistEdit('${key}')" style="background:#fff;color:#F59E0B;border:none;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer">💾 Salvar nessa data</button>
+      <button onclick="cancelHistEdit()" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,0.4);padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer">✕ Cancelar</button>
+    </div>`;
+  banner.style.display = 'flex';
+}
+
+function saveHistEdit(key) {
+  // Salva APENAS na data histórica, sem tocar no dia atual
+  const entry = {date:key, rows:[...rows], saved:new Date().toISOString(), _histEdit: true};
+  const dbLocal = loadDB();
+  dbLocal[key] = entry;
+  saveDB(dbLocal);
+  // também salva no Firebase na key correta
+  if(window.fbDB) {
+    try {
+      window.fbDB.collection('conferencias').doc(key).set(entry);
+    } catch(e) {}
+  }
+  toast(`✅ Conferência de ${new Date(key+'T12:00:00').toLocaleDateString('pt-BR')} salva!`,'t-green');
+  cancelHistEdit();
+}
+
+function cancelHistEdit() {
+  _editingHistKey = null;
+  // Restaurar dados do dia atual se existiam
+  if(_todayRowsBackup) {
+    rows = _todayRowsBackup;
+    _todayRowsBackup = null;
+    renderDashboard();
+  } else {
+    rows = [];
+    document.getElementById('importSection').style.display = 'block';
+    document.getElementById('dashboard').style.display = 'none';
+  }
+  updateDatePill();
+  const banner = document.getElementById('histEditBanner');
+  if(banner) banner.style.display = 'none';
+  showPage('history');
 }
 
 function askDeleteHist(key) { deleteHistKey=key; openModal('modalDelHist'); }
@@ -3371,11 +3731,47 @@ function doLogin() {
   if(u === LOGIN_CREDS.user && p === LOGIN_CREDS.pass) {
     document.getElementById('loginScreen').classList.add('hidden');
     err.classList.remove('show');
+    showWelcomeScreen();
   } else {
     err.classList.add('show');
     document.getElementById('loginPass').value = '';
     document.getElementById('loginPass').focus();
   }
+}
+
+function showWelcomeScreen() {
+  const ws = document.getElementById('welcomeScreen');
+  ws.classList.remove('hidden');
+  const now = new Date();
+  document.getElementById('welcomeDate').textContent = 
+    now.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  // Calculate stats from all history
+  const db = loadDB();
+  const keys = Object.keys(db);
+  let totalCtes = 0, totalOcc = 0, totalViagens = 0;
+  keys.forEach(k => {
+    const rec = db[k];
+    if(!rec || !rec.rows) return;
+    totalViagens += rec.rows.length;
+    rec.rows.forEach(r => {
+      totalCtes += (r.ctes || 0);
+      totalOcc  += (r.occCodes?.length || 0);
+    });
+  });
+  const retidosDb = loadRetidosDB();
+  document.getElementById('wk-ctes').textContent    = totalCtes.toLocaleString('pt-BR');
+  document.getElementById('wk-occ').textContent     = totalOcc.toLocaleString('pt-BR');
+  document.getElementById('wk-viagens').textContent = totalViagens.toLocaleString('pt-BR');
+  document.getElementById('wk-retidos').textContent = retidosDb.length;
+}
+
+function enterPortal() {
+  document.getElementById('welcomeScreen').classList.add('hidden');
+  updateDatePill();
+  loadOccTypes();
+  loadTodayFromStorage();
+  checkPendingDrivers();
+  renderHistory();
 }
 
 /* ══════════════════════════════════════════════════════
@@ -4185,6 +4581,409 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 13 — CTEs RETIDOS
+══════════════════════════════════════════════════════ */
+const RETIDOS_KEY = 'conf_ctes_retidos_v1';
+
+function loadRetidosDB() {
+  try { return JSON.parse(localStorage.getItem(RETIDOS_KEY)||'[]'); } catch { return []; }
+}
+function saveRetidosDB(arr) { localStorage.setItem(RETIDOS_KEY, JSON.stringify(arr)); }
+
+function saveRetido() {
+  const numeroCte  = document.getElementById('retNumeroCte').value.trim();
+  const cliente    = document.getElementById('retCliente').value.trim();
+  const dataEnvio  = document.getElementById('retDataEnvio').value;
+  const dataColeta = document.getElementById('retDataColeta').value;
+  const status     = document.getElementById('retStatus').value;
+  const obs        = document.getElementById('retObs').value.trim();
+  const errEl      = document.getElementById('retFormError');
+
+  errEl.style.display = 'none';
+  // Validações obrigatórias
+  if(!numeroCte) {
+    errEl.textContent = '⚠️ O número do CTE retido é OBRIGATÓRIO.';
+    errEl.style.display = 'block';
+    document.getElementById('retNumeroCte').classList.add('required-invalid');
+    document.getElementById('retNumeroCte').focus();
+    return;
+  }
+  document.getElementById('retNumeroCte').classList.remove('required-invalid');
+  if(!cliente) { errEl.textContent = '⚠️ Informe o cliente/destinatário.'; errEl.style.display='block'; return; }
+  if(!dataEnvio) { errEl.textContent = '⚠️ Informe a data de envio.'; errEl.style.display='block'; return; }
+
+  const db = loadRetidosDB();
+  // Verifica duplicata pelo número do CTE
+  if(db.find(r => r.numeroCte === numeroCte)) {
+    errEl.textContent = '⚠️ Este número de CTE já está registrado como retido.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  db.push({
+    id: Date.now().toString(),
+    numeroCte, cliente, dataEnvio, dataColeta: dataColeta||'',
+    status, obs, registradoEm: new Date().toISOString()
+  });
+  saveRetidosDB(db);
+
+  // Limpar formulário
+  ['retNumeroCte','retCliente','retDataEnvio','retDataColeta','retObs'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('retStatus').value = 'pendente';
+  renderRetidos();
+  toast('✅ CTE retido registrado!','t-green');
+}
+
+function updateRetidoStatus(id, newStatus) {
+  const db = loadRetidosDB();
+  const idx = db.findIndex(r => r.id === id);
+  if(idx < 0) return;
+  db[idx].status = newStatus;
+  if(newStatus === 'coletado' && !db[idx].dataColeta) {
+    db[idx].dataColeta = new Date().toISOString().slice(0,10);
+  }
+  saveRetidosDB(db);
+  renderRetidos();
+  toast('✅ Status atualizado!','t-green');
+}
+
+function deleteRetido(id) {
+  if(!confirm('Excluir este CTE retido?')) return;
+  saveRetidosDB(loadRetidosDB().filter(r => r.id !== id));
+  renderRetidos();
+  toast('🗑️ Removido.','');
+}
+
+function renderRetidos() {
+  const db = loadRetidosDB();
+  const q  = (document.getElementById('retSearch')?.value||'').toLowerCase();
+  const sf = document.getElementById('retFilterStatus')?.value||'';
+
+  const filtered = db.filter(r => {
+    const matchQ  = !q || r.numeroCte.toLowerCase().includes(q) || r.cliente.toLowerCase().includes(q);
+    const matchSt = !sf || r.status === sf;
+    return matchQ && matchSt;
+  });
+
+  document.getElementById('retCount').textContent = `${filtered.length} de ${db.length} registros`;
+
+  const tbody = document.getElementById('retidosBody');
+  if(!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text3)">${db.length?'🔍 Nenhum resultado para o filtro.':'📋 Nenhum CTE retido registrado ainda.'}</td></tr>`;
+    return;
+  }
+
+  const fmtDate = d => d ? new Date(d.includes('T')?d:d+'T12:00:00').toLocaleDateString('pt-BR') : '—';
+  const badgeMap = {
+    pendente: '<span class="retido-badge retido-badge-pendente">⏳ Pendente</span>',
+    coletado: '<span class="retido-badge retido-badge-coletado">✅ Coletado</span>',
+    liberado:  '<span class="retido-badge retido-badge-liberado">🔓 Liberado</span>',
+  };
+
+  tbody.innerHTML = filtered.map((r,i) => `<tr>
+    <td><span class="rank">${i+1}</span></td>
+    <td><strong style="font-family:monospace;font-size:13px">${escHtml(r.numeroCte)}</strong></td>
+    <td><span style="font-weight:600">${escHtml(r.cliente)}</span></td>
+    <td>${fmtDate(r.dataEnvio)}</td>
+    <td>${fmtDate(r.dataColeta)}</td>
+    <td>
+      <select onchange="updateRetidoStatus('${r.id}',this.value)" style="padding:4px 8px;border:1px solid var(--border);border-radius:6px;font-size:11px;background:var(--surface)">
+        <option value="pendente" ${r.status==='pendente'?'selected':''}>⏳ Pendente</option>
+        <option value="coletado" ${r.status==='coletado'?'selected':''}>✅ Coletado</option>
+        <option value="liberado"  ${r.status==='liberado'?'selected':''}>🔓 Liberado</option>
+      </select>
+    </td>
+    <td style="font-size:12px;color:var(--text2)">${escHtml(r.obs||'—')}</td>
+    <td><button class="btn btn-red btn-sm" onclick="deleteRetido('${r.id}')">🗑️</button></td>
+  </tr>`).join('');
+}
+
+function scanRetido(val, confirm=false) {
+  if(!val || val.length < 3) return;
+  const db = loadRetidosDB();
+  const found = db.filter(r => r.numeroCte.includes(val.trim()) || r.cliente.toLowerCase().includes(val.toLowerCase()));
+  if(confirm && found.length === 0) {
+    toast('❌ CTE não encontrado nos retidos.','t-red');
+    return;
+  }
+  if(found.length > 0) {
+    document.getElementById('retSearch').value = val;
+    renderRetidos();
+    if(confirm) toast(`🔍 ${found.length} resultado(s) encontrado(s).`,'t-green');
+  }
+}
+
+function exportRetidosXLSX() {
+  const db = loadRetidosDB();
+  if(!db.length) { toast('Nenhum CTE retido para exportar.','t-amber'); return; }
+  const data = [['Nº CTE','Cliente','Data Envio','Data Coleta','Status','Observação','Registrado Em']];
+  db.forEach(r => {
+    data.push([r.numeroCte, r.cliente, r.dataEnvio, r.dataColeta||'', r.status, r.obs||'',
+      new Date(r.registradoEm).toLocaleDateString('pt-BR')]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [18,35,12,12,12,30,14].map(w=>({wch:w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CTEs Retidos');
+  XLSX.writeFile(wb, `CTEs_Retidos_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.xlsx`);
+  toast('⬇️ Exportado!','t-green');
+}
+
+// Pre-fill retidos from TXT data on first load
+function initRetidosFromTxt() {
+  const key = 'conf_retidos_txt_init_v1';
+  if(localStorage.getItem(key)) return;
+  const entries = [
+    {numeroCte:'66/8346495',cliente:'RAVEL DISTRIBUIDORA',dataEnvio:'2026-06-05',dataColeta:'2026-06-11',status:'coletado',obs:'COLETADO DIA 11/06'},
+    {numeroCte:'3/7756291',cliente:'RAVEL DISTRIBUIDORA',dataEnvio:'2026-06-05',dataColeta:'2026-06-11',status:'coletado',obs:'COLETADO DIA 11/06'},
+    {numeroCte:'134/747054',cliente:'LABORATÓRIOS B BRAUN SA',dataEnvio:'2026-06-05',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'66/8355645',cliente:'NOVA BONI DISTRIBUIDORA',dataEnvio:'2026-06-05',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'62/8347914',cliente:'ERICA DA COSTA MEDEIROS',dataEnvio:'2026-06-05',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'52/12788336',cliente:'GENIAL PNEUS LTDA',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'8/8352298',cliente:'SHOPPING NOU SUPER MAGAZINE LTDA',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:'Reenviando 10/06'},
+    {numeroCte:'4/8361231',cliente:'RFC COMERCIO DE MIUDEZAS LTDA',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:'Reenviando 10/06'},
+    {numeroCte:'122/1429875',cliente:'M.A. COELHO A. MATOS DISTRIBUIDOR',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'101/12783189',cliente:'BOTTINO MATERIAIS DE CONSTRUÇÃO LTDA',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'52/12782945',cliente:'GENIAL PNEUS',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'66/8364059',cliente:'NOVA PATINHA',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'71/8364059',cliente:'COMERCIAL ELÉTRICA PJ LTDA',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'66/8360369',cliente:'COFEOS FERRAGENS',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'122/1429875-3',cliente:'M.A. COELHO A. MATOS DISTRIBUIDOR',dataEnvio:'2026-06-08',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'52/12804425',cliente:'GENIAL PNEUS',dataEnvio:'2026-06-10',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'10/12802268',cliente:'RAVEL DISTRIBUIDORA',dataEnvio:'2026-06-11',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'29/7784386',cliente:'SOLUWAN COMERCIAL LTDA',dataEnvio:'2026-06-12',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'112/12809796',cliente:'COMERCIAL ELÉTRICA',dataEnvio:'2026-06-12',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'4/8372174',cliente:'COMERCIAL ELÉTRICA',dataEnvio:'2026-06-12',dataColeta:'',status:'pendente',obs:''},
+    {numeroCte:'10/12625741',cliente:'COMERCIAL ELÉTRICA',dataEnvio:'2026-06-12',dataColeta:'',status:'pendente',obs:''},
+  ];
+  const now = Date.now();
+  const withIds = entries.map((e,i) => ({...e, id:(now+i).toString(), registradoEm:new Date().toISOString()}));
+  saveRetidosDB(withIds);
+  localStorage.setItem(key,'1');
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 14 — CARGAS PENDENTES DE ENTREGA
+══════════════════════════════════════════════════════ */
+const CARGAS_KEY = 'conf_cargas_pendentes_v1';
+
+function loadCargasDB() { try { return JSON.parse(localStorage.getItem(CARGAS_KEY)||'[]'); } catch { return []; } }
+function saveCargasDB(arr) { localStorage.setItem(CARGAS_KEY, JSON.stringify(arr)); }
+function limparCargas() { saveCargasDB([]); renderCargas(); toast('🗑️ Cargas limpas.',''); }
+
+function handleCargasDrop(e) {
+  e.preventDefault();
+  document.getElementById('cargasImportZone').style.borderColor = '';
+  const file = e.dataTransfer.files[0];
+  if(file) loadCargasFile(file);
+}
+
+function loadCargasFile(file) {
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws, {raw:false, dateNF:'dd/mm/yyyy'});
+    if(!data.length) { toast('Planilha vazia.','t-red'); return; }
+
+    // Normalize column names (lower snake_case)
+    const norm = s => (s||'').toString().toLowerCase().trim().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+    const normRow = obj => {
+      const out = {};
+      Object.keys(obj).forEach(k => { out[norm(k)] = obj[k]; });
+      return out;
+    };
+
+    const existing = loadCargasDB();
+    const existingCtes = new Set(existing.map(r => r.cte));
+    let added = 0, skipped = 0;
+
+    const newRows = [];
+    data.forEach((rawRow, i) => {
+      const r = normRow(rawRow);
+      const cte = (r.cte || r.numero_cte || '').toString().trim();
+      if(!cte) { skipped++; return; }
+      if(existingCtes.has(cte)) { skipped++; return; }
+      existingCtes.add(cte);
+      added++;
+      newRows.push({
+        id: (Date.now()+i).toString(),
+        cte,
+        unidade_destino:    (r.unidade_destino||'').toString().trim(),
+        praca_destino:      (r.praca_destino||'').toString().trim(),
+        setor:              (r.setor||'').toString().trim(),
+        valor_cte:          parseFloat((r.valor_cte||'0').toString().replace(',','.'))||0,
+        valor_frete:        parseFloat((r.valor_frete||'0').toString().replace(',','.'))||0,
+        peso:               parseFloat((r.peso||'0').toString().replace(',','.'))||0,
+        volume:             parseFloat((r.volume||'0').toString().replace(',','.'))||0,
+        m3:                 parseFloat((r.m3||'0').toString().replace(',','.'))||0,
+        bairro:             (r.bairro||'').toString().trim(),
+        previsao:           (r.previsao||r.previs_o||'').toString().trim(),
+        data_bip:           (r.data_bip||'').toString().trim(),
+        data_chegada:       (r.data_chegada||'').toString().trim(),
+        manifesto_entrega:  (r.manifesto_entrega||'').toString().trim(),
+        remetente:          (r.remetente||'').toString().trim(),
+        destinatario:       (r.destinatario||r.destinat_rio||'').toString().trim(),
+        placa_pre_viagem:   (r.placa_pre_viagem||'').toString().trim(),
+        data_pre_viagem:    (r.data_pre_viagem||'').toString().trim(),
+        bo:                 (r.bo||'').toString().trim(),
+        acr:                (r.acr||'').toString().trim(),
+        importadoEm:        new Date().toISOString(),
+      });
+    });
+
+    const all = [...existing, ...newRows];
+    saveCargasDB(all);
+    populateCargasFilters(all);
+    renderCargas();
+    renderCargasKpis(all);
+
+    const info = document.getElementById('cargasImportInfo');
+    info.style.display = 'block';
+    info.innerHTML = `<div style="background:var(--green-bg);border:1px solid var(--green-bd);border-radius:10px;padding:12px 16px;font-size:13px">
+      ✅ <strong>${added} cargas importadas</strong> — ${skipped} ignoradas (duplicatas ou sem CTE). Total no sistema: <strong>${all.length}</strong>
+    </div>`;
+    toast(`✅ ${added} cargas importadas!`,'t-green');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function populateCargasFilters(db) {
+  const unidades = [...new Set(db.map(r=>r.unidade_destino).filter(Boolean))].sort();
+  const bairros  = [...new Set(db.map(r=>r.bairro).filter(Boolean))].sort();
+
+  const uSel = document.getElementById('cargaFilterUnidade');
+  const bSel = document.getElementById('cargaFilterBairro');
+  uSel.innerHTML = '<option value="">Todas as unidades</option>' + unidades.map(u=>`<option value="${escHtml(u)}">${escHtml(u)}</option>`).join('');
+  bSel.innerHTML = '<option value="">Todos os bairros</option>' + bairros.map(b=>`<option value="${escHtml(b)}">${escHtml(b)}</option>`).join('');
+}
+
+function renderCargasKpis(db) {
+  const el = document.getElementById('cargasKpis');
+  const totalValor = db.reduce((s,r)=>s+(r.valor_cte||0),0);
+  const totalPeso  = db.reduce((s,r)=>s+(r.peso||0),0);
+  el.innerHTML = [
+    {icon:'📦',val:db.length,lbl:'CTEs Pendentes'},
+    {icon:'💰',val:'R$ '+totalValor.toLocaleString('pt-BR',{minimumFractionDigits:2}),lbl:'Valor Total'},
+    {icon:'⚖️',val:totalPeso.toLocaleString('pt-BR',{maximumFractionDigits:1})+' kg',lbl:'Peso Total'},
+    {icon:'🏘️',val:new Set(db.map(r=>r.bairro).filter(Boolean)).size,lbl:'Bairros'},
+  ].map(k=>`<div class="welcome-kpi" style="min-width:140px;padding:14px">
+    <div style="font-size:24px">${k.icon}</div>
+    <div style="font-size:18px;font-weight:800;color:var(--accent)">${k.val}</div>
+    <div style="font-size:11px;color:var(--text2);font-weight:600">${k.lbl}</div>
+  </div>`).join('');
+}
+
+function renderCargas() {
+  const db  = loadCargasDB();
+  const q   = (document.getElementById('cargaSearch')?.value||'').toLowerCase();
+  const fu  = document.getElementById('cargaFilterUnidade')?.value||'';
+  const fb  = document.getElementById('cargaFilterBairro')?.value||'';
+
+  const filtered = db.filter(r => {
+    const matchQ = !q || r.cte.toLowerCase().includes(q) || r.destinatario.toLowerCase().includes(q) || r.bairro.toLowerCase().includes(q) || r.remetente.toLowerCase().includes(q);
+    const matchU = !fu || r.unidade_destino === fu;
+    const matchB = !fb || r.bairro === fb;
+    return matchQ && matchU && matchB;
+  });
+
+  document.getElementById('cargaCount').textContent = `${filtered.length} de ${db.length} registros`;
+  renderCargasKpis(db);
+
+  const tbody = document.getElementById('cargasBody');
+  if(!filtered.length) {
+    tbody.innerHTML = `<tr><td colspan="15" style="text-align:center;padding:40px;color:var(--text3)">${db.length?'🔍 Nenhum resultado.':'📋 Importe uma planilha de cargas pendentes.'}</td></tr>`;
+    return;
+  }
+
+  const fmtMoney = v => v ? 'R$ '+parseFloat(v).toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—';
+  tbody.innerHTML = filtered.map((r,i)=>`<tr>
+    <td><span class="rank">${i+1}</span></td>
+    <td><strong style="font-family:monospace">${escHtml(r.cte)}</strong></td>
+    <td style="font-size:11px">${escHtml(r.unidade_destino)}</td>
+    <td style="font-size:11px">${escHtml(r.praca_destino)}</td>
+    <td>${escHtml(r.setor)}</td>
+    <td><span style="font-weight:600">${escHtml(r.bairro)}</span></td>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(r.destinatario)}">${escHtml(r.destinatario)}</td>
+    <td style="font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis" title="${escHtml(r.remetente)}">${escHtml(r.remetente)}</td>
+    <td>${fmtMoney(r.valor_cte)}</td>
+    <td>${r.peso?r.peso.toLocaleString('pt-BR')+'kg':'—'}</td>
+    <td>${r.volume||'—'}</td>
+    <td style="font-size:11px">${escHtml(r.previsao)}</td>
+    <td style="font-size:11px">${escHtml(r.manifesto_entrega)}</td>
+    <td><span class="plate">${escHtml(r.placa_pre_viagem)||'—'}</span></td>
+    <td style="font-size:11px">${escHtml(r.bo)}</td>
+  </tr>`).join('');
+}
+
+function scanCarga(val, confirm=false) {
+  if(!val || val.length < 2) return;
+  const db = loadCargasDB();
+  const found = db.filter(r => r.cte.includes(val.trim()) || r.destinatario.toLowerCase().includes(val.toLowerCase()));
+  if(confirm && !found.length) { toast('❌ CTE não encontrado nas cargas pendentes.','t-red'); return; }
+  if(found.length > 0) {
+    document.getElementById('cargaSearch').value = val;
+    renderCargas();
+    if(confirm) toast(`🔍 ${found.length} carga(s) encontrada(s).`,'t-green');
+  }
+}
+
+function exportCargasXLSX() {
+  const db = loadCargasDB();
+  if(!db.length) { toast('Nenhuma carga para exportar.','t-amber'); return; }
+  const headers = ['CTE','Unidade Destino','Praça Destino','Setor','Bairro','Destinatário','Remetente','Valor CTE','Peso','Volume','M3','Previsão','Data BIP','Data Chegada','Manifesto Entrega','Placa','Data Pré-Viagem','BO','ACR'];
+  const data = [headers];
+  db.forEach(r => data.push([r.cte,r.unidade_destino,r.praca_destino,r.setor,r.bairro,r.destinatario,r.remetente,r.valor_cte,r.peso,r.volume,r.m3,r.previsao,r.data_bip,r.data_chegada,r.manifesto_entrega,r.placa_pre_viagem,r.data_pre_viagem,r.bo,r.acr]));
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cargas Pendentes');
+  XLSX.writeFile(wb, `Cargas_Pendentes_${new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')}.xlsx`);
+  toast('⬇️ Exportado!','t-green');
+}
+
+/* ══════════════════════════════════════════════════════
+   MÓDULO 15 — INIT FINAL + SECURITY AUDIT
+══════════════════════════════════════════════════════ */
+// Sanitize all HTML outputs via escHtml already implemented
+// XSS: all dynamic content passed through escHtml()
+// Duplicate prevention: enforced in saveRetido(), loadCargasFile(), addOccType(), registerDriver()
+// Field validation: numeroCte (numeric/slash only), CPF (validated), placa (uppercase), phone (masked)
+
+// Render retidos and cargas when switching to those pages
+const _origShowPage = typeof showPage === 'function' ? showPage : null;
+window._showPageExtended = function(pg) {
+  if(pg === 'retidos') {
+    renderRetidos();
+  } else if(pg === 'cargas') {
+    const db = loadCargasDB();
+    populateCargasFilters(db);
+    renderCargas();
+  }
+};
+
+// Hook into tab switches
+document.addEventListener('DOMContentLoaded', () => {
+  initRetidosFromTxt();
+  document.getElementById('tab-retidos')?.addEventListener('click', () => { renderRetidos(); });
+  document.getElementById('tab-cargas')?.addEventListener('click', () => {
+    const db = loadCargasDB(); populateCargasFilters(db); renderCargas();
+  });
+  // Set today's date default in retido form
+  const today = new Date().toISOString().slice(0,10);
+  const retDataEnvio = document.getElementById('retDataEnvio');
+  if(retDataEnvio) retDataEnvio.value = today;
+});
 </script>
+
+<!-- PORTAL FOOTER -->
+<footer class="portal-footer">
+  Portal de Conferência de Entregas &nbsp;|&nbsp; <strong>v2.0.0</strong> &nbsp;|&nbsp; Mindset7 Studio &nbsp;|&nbsp; 2026
+</footer>
+
 </body>
 </html>
