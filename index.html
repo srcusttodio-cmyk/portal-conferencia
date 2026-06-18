@@ -19,13 +19,17 @@
    FIREBASE SETUP (compat mode — funciona no Electron)
 ══════════════════════════════════════════════════════ */
 (function() {
+  // ⚠️  SEGURANÇA: As credenciais do Firebase foram removidas do código-fonte.
+  // Configure as variáveis abaixo em um arquivo de ambiente (.env) ou via
+  // servidor de configuração antes de fazer deploy em produção.
+  // Para uso local temporário, substitua os valores vazios pelas suas chaves.
   const firebaseConfig = {
-    apiKey:            "AIzaSyCQSA_blNZx-sBE9DuN1-NBj1KaDaotx4s",
-    authDomain:        "portal-conferencia.firebaseapp.com",
-    projectId:         "portal-conferencia",
-    storageBucket:     "portal-conferencia.firebasestorage.app",
-    messagingSenderId: "1087251395644",
-    appId:             "1:1087251395644:web:4a9d60b1cff9aa7d127f39"
+    apiKey:            window.__FB_API_KEY__            || "",
+    authDomain:        window.__FB_AUTH_DOMAIN__        || "",
+    projectId:         window.__FB_PROJECT_ID__         || "",
+    storageBucket:     window.__FB_STORAGE_BUCKET__     || "",
+    messagingSenderId: window.__FB_MESSAGING_SENDER_ID__|| "",
+    appId:             window.__FB_APP_ID__             || ""
   };
 
   let fbDB = null;
@@ -34,7 +38,6 @@
     try {
       if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
       fbDB = firebase.firestore();
-      console.log('🔥 Firebase conectado!');
       setSyncStatus('synced');
       // load occTypes from cloud on init
       loadCloudOccTypes();
@@ -3779,17 +3782,48 @@ async function exportOccXLSX() {
 /* ══════════════════════════════════════════════════════
    LOGIN
 ══════════════════════════════════════════════════════ */
-const LOGIN_CREDS = { user: 'admin', pass: 'admin' };
+// ── LOGIN SECURITY ──────────────────────────────────────────────────────────
+// Credenciais armazenadas como hash SHA-256 (nunca em texto plano no código).
+// Para alterar: gere o hash via: crypto.subtle.digest('SHA-256', encoder.encode('senha'))
+// Hash abaixo corresponde a user='admin' / pass='admin' — ALTERE em produção.
+const _LC = {
+  u: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', // admin
+  p: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'  // admin
+};
+let _loginAttempts = 0;
+let _loginLockUntil = 0;
 
-function doLogin() {
+async function _sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function doLogin() {
+  const now = Date.now();
+  if(now < _loginLockUntil) {
+    const secs = Math.ceil((_loginLockUntil - now) / 1000);
+    document.getElementById('loginError').textContent = `⏳ Muitas tentativas. Aguarde ${secs}s.`;
+    document.getElementById('loginError').classList.add('show');
+    return;
+  }
   const u = document.getElementById('loginUser').value.trim().toLowerCase();
   const p = document.getElementById('loginPass').value;
   const err = document.getElementById('loginError');
-  if(u === LOGIN_CREDS.user && p === LOGIN_CREDS.pass) {
+  const [uh, ph] = await Promise.all([_sha256(u), _sha256(p)]);
+  if(uh === _LC.u && ph === _LC.p) {
+    _loginAttempts = 0;
     document.getElementById('loginScreen').classList.add('hidden');
     err.classList.remove('show');
     showWelcomeScreen();
   } else {
+    _loginAttempts++;
+    if(_loginAttempts >= 5) {
+      _loginLockUntil = Date.now() + 30000; // 30s lock
+      _loginAttempts = 0;
+      err.textContent = '🔒 Conta bloqueada temporariamente. Tente em 30s.';
+    } else {
+      err.textContent = `⚠️ Usuário ou senha incorretos. (${5 - _loginAttempts} tentativas restantes)`;
+    }
     err.classList.add('show');
     document.getElementById('loginPass').value = '';
     document.getElementById('loginPass').focus();
