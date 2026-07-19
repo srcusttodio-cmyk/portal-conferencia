@@ -1,0 +1,28 @@
+# Dependências
+node_modules/
+electron/node_modules/
+firebase/functions/node_modules/
+
+# Build / dist
+dist/
+build/
+release/
+
+# Firebase
+.firebase/
+.firebaserc
+firebase-debug.log
+firestore-debug.log
+
+# Segredos - NUNCA subir chave real pro GitHub
+.env
+.env.local
+serviceAccountKey.json
+firebase-config.local.js
+public/js/firebase-keys.local.js
+public/js/gemini-keys.local.js
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log

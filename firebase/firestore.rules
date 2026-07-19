@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Coleção de conferências diárias
+    match /conferencias/{docId} {
+      allow read, write: if request.auth != null; // ajuste conforme sua autenticação
+    }
+
+    // Config (tipos de ocorrência etc.)
+    match /config/{docId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

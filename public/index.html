@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal de Conferência de Entregas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<!-- TELA DE LOGIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+        <path d="M1 3h15v13H1V3z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M16 8h4l3 3v5h-7V8z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="5.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+        <circle cx="18.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+      </svg>
+    </div>
+    <div class="login-title">Portal de Conferência</div>
+    <div class="login-subtitle">Controle de Entregas</div>
+    <div class="login-field">
+      <input type="text" id="loginUser" placeholder="Usuário" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <input type="password" id="loginPass" placeholder="Senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="login-error" id="loginError">⚠️ Usuário ou senha incorretos.</div>
+    <button class="login-btn" onclick="doLogin()">ENTRAR →</button>
+    <div class="login-brand">
+      <div class="login-brand-logo">M7S</div>
+      <div class="login-brand-info">
+        <div class="brand-name">Mindset7 Studio</div>
+        <div class="brand-sub">CRIATIVIDADE QUE POSICIONA.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- WELCOME SCREEN (pós-login) -->
+<div id="welcomeScreen" class="hidden">
+  <div class="welcome-title">🚚 Bem-vindo ao Portal</div>
+  <div class="welcome-sub" id="welcomeDate"></div>
+  <div class="welcome-grid" id="welcomeGrid">
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">📦</div><div class="welcome-kpi-val" id="wk-ctes">—</div><div class="welcome-kpi-label">CTEs no Sistema</div></div>
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">🚩</div><div class="welcome-kpi-val" id="wk-occ">—</div><div class="welcome-kpi-label">Ocorrências</div></div>
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">🗓️</div><div class="welcome-kpi-val" id="wk-viagens">—</div><div class="welcome-kpi-label">Viagens Realizadas</div></div>
+    <div class="welcome-kpi"><div class="welcome-kpi-icon">🔒</div><div class="welcome-kpi-val" id="wk-retidos">—</div><div class="welcome-kpi-label">CTEs Retidos</div></div>
+  </div>
+  <button class="welcome-enter-btn" onclick="enterPortal()">Acessar Portal →</button>
+</div>
+
+<div class="app-shell">
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="logo-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M1 3h15v13H1V3z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M16 8h4l3 3v5h-7V8z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="5.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+        <circle cx="18.5" cy="18.5" r="2" stroke="white" stroke-width="1.8"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Portal de Conferência</h1>
+      <p>Controle diário de entregas</p>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-group">
+      <div class="nav-group-label">Operação</div>
+      <div class="tab active" id="tab-today" onclick="showPage('today')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18"/></svg>
+        <span class="tab-label">Conferência do Dia</span>
+      </div>
+      <div class="tab" id="tab-history" onclick="showPage('history')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+        <span class="tab-label">Histórico</span>
+      </div>
+      <div class="tab" id="tab-pendentes" onclick="showPage('pendentes')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+        <span class="tab-label">Pendentes</span>
+      </div>
+      <div class="tab" id="tab-cargas" onclick="showPage('cargas')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="13" height="10"/><path d="M14 9h4l3 3v4h-7V9z"/><circle cx="5" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/></svg>
+        <span class="tab-label">Cargas Pendentes</span>
+      </div>
+      <div class="tab" id="tab-retidos" onclick="showPage('retidos')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <span class="tab-label">CTEs Retidos</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Análises</div>
+      <div class="tab" id="tab-dashboard_mgr" onclick="showPage('dashboard_mgr')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+        <span class="tab-label">Dashboard</span>
+      </div>
+      <div class="tab" id="tab-ranking" onclick="showPage('ranking')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8v4a4 4 0 0 1-8 0V4z"/><path d="M5 5H3v2a4 4 0 0 0 4 4M19 5h2v2a4 4 0 0 1-4 4"/><path d="M10 14v3H8v2h8v-2h-2v-3"/></svg>
+        <span class="tab-label">Ranking</span>
+      </div>
+      <div class="tab" id="tab-conclusao" onclick="showPage('conclusao')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/></svg>
+        <span class="tab-label">Conclusão</span>
+      </div>
+      <div class="tab" id="tab-occreport" onclick="showPage('occreport')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M3 20h18"/></svg>
+        <span class="tab-label">Ocorrências</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Cadastros</div>
+      <div class="tab" id="tab-cadmotoristas" onclick="showPage('cadmotoristas')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+        <span class="tab-label">Motoristas</span>
+      </div>
+      <div class="tab" id="tab-occtypes" onclick="showPage('occtypes')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.97 7.97 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a8 8 0 0 0-1.7-1L14.9 3h-3.8l-.4 2.9a8 8 0 0 0-1.7 1l-2.5-1-2 3.4L6.6 11a7.97 7.97 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a8 8 0 0 0 1.7 1l.4 2.9h3.8l.4-2.9a8 8 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13z"/></svg>
+        <span class="tab-label">Tipos de Ocorrência</span>
+      </div>
+    </div>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Outros</div>
+      <div class="tab" id="tab-exportacao" onclick="showPage('exportacao')">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 19h16"/></svg>
+        <span class="tab-label">Exportação</span>
+      </div>
+    </div>
+  </nav>
+</aside>
+
+<div class="content-col">
+
+<!-- HEADER -->
+<header>
+  <div class="header-search">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <span>Buscar por motorista, CTE, placa...</span>
+  </div>
+  <div class="header-right">
+    <button id="darkModeToggle" onclick="toggleDarkMode()">
+      <span id="darkModeIcon">🌙</span>
+      <span class="dm-label" id="darkModeLabel">Dark Mode</span>
+    </button>
+    <div class="date-pill" id="datePill"></div>
+    <button class="btn-icon" title="Novo dia" onclick="confirmNewDay()">＋</button>
+    <button class="btn-icon" title="Histórico" onclick="showPage('history')">📋</button>
+    <button class="btn-icon" title="Assistente Gemini" onclick="toggleGeminiPanel()">✨</button>
+  </div>
+</header>
+
+<!-- ═══ CTES RETIDOS PAGE ═══ -->
+<div id="page-retidos" class="page">
+<main>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <h2 style="font-size:20px;font-weight:800">🔒 CTEs Retidos — Enviados para Coleta de Assinatura</h2>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="exportRetidosXLSX()">⬇️ Exportar</button>
+    </div>
+  </div>
+
+  <!-- Scanner bar -->
+  <div class="scanner-bar">
+    <span style="font-size:20px">🔊</span>
+    <span style="font-weight:700;font-size:13px;color:var(--accent);white-space:nowrap">Beep / Scanner:</span>
+    <input type="text" id="retidoScanner" placeholder="Escaneie ou digite o número do CTE para buscar cliente..." autocomplete="off"
+      oninput="scanRetido(this.value)" onkeydown="if(event.key==='Enter')scanRetido(this.value,true)">
+    <button class="btn btn-primary btn-sm" onclick="scanRetido(document.getElementById('retidoScanner').value,true)">🔍 Buscar</button>
+  </div>
+
+  <!-- Formulário de cadastro -->
+  <div class="occ-panel" style="margin-bottom:20px">
+    <div class="occ-panel-head"><h3>➕ Registrar CTE Retido</h3></div>
+    <div class="occ-panel-body">
+      <div class="retido-form-grid">
+        <div class="retido-field">
+          <label>Nº CTE Retido <span style="color:var(--red)">*</span></label>
+          <input type="text" id="retNumeroCte" placeholder="Ex: 66/8346495" maxlength="30"
+            oninput="this.value=this.value.replace(/[^0-9\/\-]/g,'')">
+        </div>
+        <div class="retido-field">
+          <label>Cliente / Destinatário <span style="color:var(--red)">*</span></label>
+          <input type="text" id="retCliente" placeholder="Nome do cliente" maxlength="100" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="retido-field">
+          <label>Data de Envio <span style="color:var(--red)">*</span></label>
+          <input type="date" id="retDataEnvio">
+        </div>
+        <div class="retido-field">
+          <label>Data de Coleta</label>
+          <input type="date" id="retDataColeta">
+        </div>
+        <div class="retido-field">
+          <label>Status</label>
+          <select id="retStatus">
+            <option value="pendente">⏳ Pendente</option>
+            <option value="coletado">✅ Coletado</option>
+            <option value="liberado">🔓 Liberado</option>
+          </select>
+        </div>
+        <div class="retido-field">
+          <label>Observação</label>
+          <input type="text" id="retObs" placeholder="Ex: Reenviando em 10/06" maxlength="200">
+        </div>
+      </div>
+      <div id="retFormError" style="color:var(--red);font-size:12px;display:none;margin-bottom:8px"></div>
+      <button class="btn btn-primary" onclick="saveRetido()">💾 Registrar CTE Retido</button>
+    </div>
+  </div>
+
+  <!-- Filtros -->
+  <div class="cargas-filter-bar">
+    <input type="text" id="retSearch" placeholder="🔍 Buscar por CTE ou cliente..." oninput="renderRetidos()" style="min-width:240px">
+    <select id="retFilterStatus" onchange="renderRetidos()">
+      <option value="">Todos os status</option>
+      <option value="pendente">⏳ Pendente</option>
+      <option value="coletado">✅ Coletado</option>
+      <option value="liberado">🔓 Liberado</option>
+    </select>
+    <span id="retCount" style="font-size:12px;color:var(--text3)"></span>
+  </div>
+
+  <!-- Tabela -->
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table class="retidos-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nº CTE</th>
+            <th>Cliente</th>
+            <th>Data Envio</th>
+            <th>Data Coleta</th>
+            <th>Status</th>
+            <th>Observação</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="retidosBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ CARGAS PENDENTES PAGE ═══ -->
+<div id="page-cargas" class="page">
+<main>
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h2 style="font-size:20px;font-weight:800">🚚 Cargas Pendentes de Entrega</h2>
+      <p style="font-size:12px;color:var(--text3);margin-top:2px">Importe a planilha e use o beep para consultar qualquer CTE instantaneamente</p>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="document.getElementById('cargasFileInput').click()" style="gap:10px">
+        <span style="font-size:16px">📥</span> Importar Planilha
+      </button>
+      <input type="file" id="cargasFileInput" accept=".xlsx,.xls" style="display:none" onchange="loadCargasFile(this.files[0])">
+      <button class="btn btn-outline btn-sm" onclick="exportCargasXLSX()">⬇️ Exportar</button>
+      <button class="btn btn-red btn-sm" onclick="if(confirm('Limpar todas as cargas importadas?'))limparCargas()">🗑️ Limpar</button>
+    </div>
+  </div>
+
+  <!-- ESTADO VAZIO: mostrar drop zone grande quando não tem dados -->
+  <div id="cargasEmptyState" style="display:none">
+    <div class="cargas-import-zone" id="cargasImportZone"
+      onclick="document.getElementById('cargasFileInput').click()"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="handleCargasDrop(event)">
+      <div style="font-size:52px;margin-bottom:14px">📥</div>
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:6px">Nenhuma planilha importada ainda</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:20px">Clique aqui ou arraste o arquivo <strong>.xlsx</strong> para importar</div>
+      <button class="btn btn-primary btn-lg" style="pointer-events:none">
+        📥 Selecionar Planilha de Cargas
+      </button>
+      <p style="font-size:11px;color:var(--text3);margin-top:16px;max-width:600px">
+        Campos suportados: <strong>unidade_destino · cte · praca_destino · setor · valor_cte · valor_frete · peso · volume · m3 · bairro · previsao · data_bip · data_chegada · manifesto_entrega · remetente · destinatario · placa_pre_viagem · data_pre_viagem · bo · acr</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- ESTADO COM DADOS -->
+  <div id="cargasDataState" style="display:none">
+
+    <!-- BEEP / SCANNER — destaque principal -->
+    <div class="scanner-bar" style="margin-bottom:20px">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <span style="font-size:22px">🔊</span>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:13px;color:var(--accent);margin-bottom:4px">BEEP / SCANNER — Consulta rápida de CTE</div>
+        <input type="text" id="cargaScanner"
+          placeholder="Bipe ou digite o número do CTE aqui (ex: 125/748544)..."
+          autocomplete="off" style="width:100%;padding:12px 16px;border:2px solid var(--accent);border-radius:10px;font-size:15px;font-family:inherit;outline:none;background:var(--surface)"
+          oninput="scanCargaLive(this.value)"
+          onkeydown="if(event.key==='Enter'){scanCargaModal(this.value);this.select()}"
+          onfocus="this.select()">
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Pressione <strong>Enter</strong> para ver ficha completa do CTE · ou pesquise na tabela abaixo</div>
+      </div>
+      <button class="btn btn-primary" onclick="scanCargaModal(document.getElementById('cargaScanner').value)" style="white-space:nowrap">
+        🔍 Ver Ficha
+      </button>
+    </div>
+
+    <!-- STATUS DA ÚLTIMA IMPORTAÇÃO -->
+    <div id="cargasImportInfo" style="display:none;margin-bottom:16px"></div>
+
+    <!-- KPIs -->
+    <div id="cargasKpis" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+    <!-- FILTROS -->
+    <div class="cargas-filter-bar">
+      <input type="text" id="cargaSearch" placeholder="🔍 Buscar por CTE, destinatário, bairro, remetente..." oninput="renderCargas()" style="min-width:280px;flex:1">
+      <select id="cargaFilterUnidade" onchange="renderCargas()"><option value="">Todas as unidades</option></select>
+      <select id="cargaFilterBairro"  onchange="renderCargas()"><option value="">Todos os bairros</option></select>
+      <span id="cargaCount" style="font-size:12px;color:var(--text3);white-space:nowrap"></span>
+    </div>
+
+    <!-- TABELA -->
+    <div class="cargas-table-wrap">
+      <table class="cargas-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>CTE</th>
+            <th>Unidade Destino</th>
+            <th>Praça Destino</th>
+            <th>Setor</th>
+            <th>Bairro</th>
+            <th>Destinatário</th>
+            <th>Remetente</th>
+            <th>Valor CTE</th>
+            <th>Peso</th>
+            <th>Volume</th>
+            <th>Previsão</th>
+            <th>Manifesto</th>
+            <th>Placa</th>
+            <th>BO</th>
+            <th>ACR</th>
+          </tr>
+        </thead>
+        <tbody id="cargasBody"></tbody>
+      </table>
+    </div>
+
+  </div><!-- /cargasDataState -->
+
+</main>
+</div>
+
+<!-- MODAL FICHA DO CTE (resultado do beep) -->
+<div class="overlay" id="modalFichaCte">
+  <div class="modal" style="max-width:640px;width:96%">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <h2 style="font-size:18px;font-weight:800">📦 Ficha do CTE</h2>
+      <button class="modal-close-btn" onclick="closeModal('modalFichaCte')">✕</button>
+    </div>
+    <div id="fichaCteContent"></div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-outline" onclick="closeModal('modalFichaCte');document.getElementById('cargaScanner').focus()">Fechar e continuar bipando</button>
+    </div>
+  </div>
+</div>
+
+<!-- AUTOSAVE INDICATOR -->
+<div id="autosaveBar"><div id="autosaveProgress"></div></div>
+<div id="autosaveBadge">
+  <span class="as-dot" id="asDot"></span>
+  <span id="asText">Salvo automaticamente</span>
+</div>
+<div id="syncBadge">
+  <span class="sync-dot" id="syncDot"></span>
+  <span id="syncText">☁️ Conectado</span>
+</div>
+
+<!-- ═══ TODAY PAGE ═══ -->
+<div id="page-today" class="page active">
+<main>
+
+  <!-- IMPORT -->
+  <div id="importSection">
+    <div class="import-zone" id="importZone"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')"
+      ondrop="handleDrop(event)">
+      <span class="iz-icon">📂</span>
+      <h2>Importe a planilha do dia</h2>
+      <p>Clique no botão abaixo para selecionar o arquivo <strong>.xlsx</strong> ou arraste e solte aqui</p>
+      <button class="btn btn-primary btn-lg" onclick="document.getElementById('fileInput').click()">
+        📂 Selecionar arquivo Excel
+      </button>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="loadFile(this.files[0])">
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard" style="display:none">
+
+    <!-- new conference button -->
+    <div class="new-conf-bar">
+      <button class="btn btn-outline btn-sm" onclick="confirmNewDay()">
+        🔄 Iniciar nova conferência de entregas
+      </button>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpis" id="kpiStrip"></div>
+
+    <!-- CHARTS -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Prestação de Contas</h3>
+        <div class="chart-wrap"><canvas id="cPrest"></canvas></div>
+        <div class="legend" id="legPrest"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Ocorrências</h3>
+        <div class="chart-wrap"><canvas id="cOcorr"></canvas></div>
+        <div class="legend" id="legOcorr"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Tipos de Ocorrência</h3>
+        <div class="occ-bars" id="occBarsChart" style="margin-top:8px;min-height:140px"></div>
+      </div>
+    </div>
+
+    <!-- TOOLBAR -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <h3 id="tableTitle">Motoristas do dia</h3>
+        <div class="search-box">
+          <span>🔍</span>
+          <input type="text" id="searchInput" placeholder="Buscar motorista..." oninput="filterTable()">
+        </div>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn btn-amber btn-sm" onclick="openModal('modalViagemAdicional')">+ Viagem Adicional</button>
+        <button class="btn btn-outline btn-sm" onclick="exportXLSX()">⬇️ Exportar Excel</button>
+        <button class="btn btn-green btn-sm"   onclick="saveDay()">💾 Salvar conferência</button>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-wrap">
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Motorista</th>
+              <th>Placa</th>
+              <th>CTEs</th>
+              <th>Status Prestação</th>
+              <th>Tipo de Ocorrência</th>
+              <th>% Ocorr.</th>
+              <th>Observações</th>
+            </tr>
+          </thead>
+          <tbody id="mainTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /dashboard -->
+</main>
+</div>
+
+<!-- ═══ HISTORY PAGE ═══ -->
+<div id="page-history" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>Conferências Salvas</h2>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="exportAllXLSX()">⬇️ Exportar tudo</button>
+    </div>
+  </div>
+  <div class="hist-grid" id="histGrid"></div>
+</main>
+</div>
+
+<!-- ═══ OCCURRENCE TYPES PAGE ═══ -->
+<div id="page-occtypes" class="page">
+<main>
+  <div class="occ-page-grid">
+
+    <!-- ADD / IMPORT -->
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div class="occ-panel">
+        <div class="occ-panel-head">
+          <h3>Adicionar tipo de ocorrência</h3>
+        </div>
+        <div class="occ-panel-body">
+          <div class="form-row">
+            <input class="inp-code" id="occCode" type="text" maxlength="6" placeholder="Cód.">
+            <input class="inp-desc" id="occDesc" type="text" placeholder="Descrição (ex: Área de risco)" onkeydown="if(event.key==='Enter')addOccType()">
+            <button class="btn btn-primary" onclick="addOccType()">Adicionar</button>
+          </div>
+          <p style="font-size:12px;color:var(--text3)">Exemplos de código: 6 (Cliente ausente), 20 (Sem tempo hábil), 76 (Área de risco)</p>
+        </div>
+      </div>
+
+      <div class="occ-panel">
+        <div class="occ-panel-head">
+          <h3>Importar via planilha Excel</h3>
+        </div>
+        <div class="occ-panel-body">
+          <div class="occ-import-zone" onclick="document.getElementById('occFileInput').click()"
+            ondragover="event.preventDefault()" ondrop="handleOccDrop(event)">
+            <div style="font-size:28px;margin-bottom:8px">📊</div>
+            <div style="font-size:13px;font-weight:600;color:var(--text2)">Importar lista de ocorrências</div>
+            <p class="occ-hint">Planilha com colunas <strong>Código</strong> e <strong>Descrição</strong></p>
+          </div>
+          <input type="file" id="occFileInput" accept=".xlsx,.xls" style="display:none" onchange="loadOccFile(this.files[0])">
+        </div>
+      </div>
+    </div>
+
+    <!-- LIST -->
+    <div class="occ-panel">
+      <div class="occ-panel-head">
+        <h3>Tipos cadastrados</h3>
+        <span style="font-size:12px;color:var(--text3)" id="occCount">0 tipos</span>
+      </div>
+      <div class="occ-panel-body" style="padding:10px">
+        <div class="occ-list" id="occList"></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+</div>
+
+
+<!-- ═══ OCCURRENCES REPORT PAGE ═══ -->
+<div id="page-occreport" class="page">
+<main>
+
+  <!-- TOOLBAR -->
+  <div class="occpage-toolbar">
+    <h2>📊 Painel de Ocorrências</h2>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <div class="occpage-filters">
+        <select id="occFilterPeriod" onchange="renderOccReport()">
+          <option value="all">Todo o histórico</option>
+          <option value="month">Mês atual</option>
+          <option value="today">Apenas hoje</option>
+        </select>
+        <input type="text" id="occFilterDriver" placeholder="🔍 Filtrar motorista..." oninput="filterOccTable()" style="min-width:180px">
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="exportOccXLSX()">⬇️ Exportar Ocorrências</button>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="occ-kpis" id="occKpis"></div>
+
+  <!-- GRÁFICOS TOPO -->
+  <div class="occpage-charts">
+    <div class="occpage-chart-card">
+      <h3>Top tipos de ocorrência</h3>
+      <div id="occTypeChart"></div>
+    </div>
+    <div class="occpage-chart-card">
+      <h3>Motoristas com mais ocorrências</h3>
+      <div id="occDriverChart"></div>
+    </div>
+    <div class="occpage-chart-card">
+      <h3>Linha do tempo (por dia)</h3>
+      <div class="timeline-bars" id="occTimeline"></div>
+    </div>
+  </div>
+
+  <!-- CARDS POR MOTORISTA -->
+  <div class="occpage-cards-section">
+    <h3>Resumo por motorista</h3>
+    <div class="occpage-cards" id="occDriverCards"></div>
+  </div>
+
+  <!-- TABELA DETALHADA -->
+  <div class="occpage-table-section">
+    <div class="occpage-table-head">
+      <h3>Detalhamento completo</h3>
+      <span id="occTableCount" style="font-size:12px;color:var(--text3)"></span>
+    </div>
+    <div class="table-wrap">
+      <div style="overflow-x:auto">
+        <table class="occ-detail-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Motorista</th>
+              <th>Placa</th>
+              <th>Cód.</th>
+              <th>Descrição</th>
+              <th>Status Prestação</th>
+              <th>Observação</th>
+            </tr>
+          </thead>
+          <tbody id="occDetailTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- MODAL NEW DAY -->
+<div class="overlay" id="modalNewDay">
+  <div class="modal">
+    <h2>Iniciar nova conferência de entregas?</h2>
+    <p>Os dados atuais serão descartados da tela (certifique-se de ter salvo). Deseja continuar?</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modalNewDay')">Cancelar</button>
+      <button class="btn btn-primary" onclick="startNewDay()">Continuar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DELETE HISTORY -->
+<div class="overlay" id="modalDelHist">
+  <div class="modal">
+    <h2>Excluir conferência?</h2>
+    <p>Esta ação não pode ser desfeita. Deseja excluir este registro do histórico?</p>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modalDelHist')">Cancelar</button>
+      <button class="btn btn-red" onclick="confirmDeleteHist()">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ANALÍTICO DE OCORRÊNCIAS -->
+<div class="overlay" id="modalOccAnalytics">
+  <div class="modal modal-wide">
+    <h2>📊 Análise de Ocorrências</h2>
+    <div class="modal-tabs">
+      <div class="modal-tab active" id="mtab-today" onclick="switchModalTab('today')">Hoje</div>
+      <div class="modal-tab" id="mtab-month" onclick="switchModalTab('month')">Visão do Mês</div>
+    </div>
+    <div class="modal-tab-panel active" id="mpanel-today">
+      <div class="occ-modal-grid" id="occAnalyticsToday"></div>
+    </div>
+    <div class="modal-tab-panel" id="mpanel-month">
+      <div class="occ-modal-grid" id="occAnalyticsMonth"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-outline" onclick="closeModal('modalOccAnalytics')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ALERTA PENDENTES DO DIA ANTERIOR -->
+<div class="pending-alert" id="pendingAlert">
+  <div class="pending-alert-box">
+    <div class="pending-alert-icon">⚠️</div>
+    <h2>Motoristas pendentes do dia anterior</h2>
+    <p>Os seguintes motoristas saíram ontem e ainda não prestaram conta. Deseja abrir o registro do dia anterior para atualizá-los?</p>
+    <div class="pending-list" id="pendingList"></div>
+    <div class="pending-actions">
+      <button class="btn btn-outline" onclick="closePendingAlert()">Agora não</button>
+      <button class="btn btn-primary" onclick="openPendingDay()">📋 Abrir dia anterior</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL MOTORISTAS EM OPERAÇÃO -->
+<div class="overlay" id="modalDrivers">
+  <div class="modal-xl">
+    <div class="modal-xl-header">
+      <h2>🚚 Motoristas em Operação</h2>
+      <button class="modal-close-btn" onclick="closeModal('modalDrivers')">✕</button>
+    </div>
+    <!-- Cadastro -->
+    <div class="driver-register-card">
+      <h3>➕ Cadastrar Novo Motorista</h3>
+      <div class="driver-register-row">
+        <div class="driver-register-field">
+          <label>Nome Completo</label>
+          <input type="text" id="drvRegName" placeholder="Ex: João da Silva">
+        </div>
+        <div class="driver-register-field" style="max-width:160px">
+          <label>Placa do Veículo</label>
+          <input type="text" id="drvRegPlate" placeholder="ABC-1234" maxlength="8">
+        </div>
+        <button class="btn btn-primary" onclick="registerDriver()" style="margin-bottom:1px">Cadastrar</button>
+      </div>
+    </div>
+    <!-- Lista -->
+    <div id="driversGridContainer">
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:14px">
+        Motoristas Cadastrados
+      </div>
+      <div class="drivers-grid" id="driversGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RETORNARAM -->
+<div class="overlay" id="modalReturned">
+  <div class="modal-xl">
+    <div class="modal-xl-header">
+      <h2>↩️ Motoristas que Retornaram</h2>
+      <button class="modal-close-btn" onclick="closeModal('modalReturned')">✕</button>
+    </div>
+    <div class="returned-kpis" id="returnedKpis"></div>
+    <div id="returnedList"></div>
+  </div>
+</div>
+
+<!-- ═══ RANKING PAGE ═══ -->
+<div id="page-ranking" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>🏆 Ranking de Produtividade</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:12px;color:var(--text3)" id="rankingSubtitle">Baseado na conferência atual</span>
+      <button class="btn btn-outline btn-sm" onclick="exportRankingXLSX()">⬇️ Exportar Ranking</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table id="rankingTable">
+        <thead>
+          <tr>
+            <th>Posição</th>
+            <th onclick="sortRanking('nome')" style="cursor:pointer">Motorista ↕</th>
+            <th onclick="sortRanking('placa')" style="cursor:pointer">Placa ↕</th>
+            <th onclick="sortRanking('ctes')" style="cursor:pointer">CTEs ↕</th>
+            <th>Realizadas</th>
+            <th onclick="sortRanking('prod')" style="cursor:pointer">Produtividade ↕</th>
+          </tr>
+        </thead>
+        <tbody id="rankingBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ CONCLUSÃO PAGE ═══ -->
+<div id="page-conclusao" class="page">
+<main>
+  <div class="hist-toolbar"><h2>🎯 Conclusão da Operação</h2></div>
+  <div class="kpis" id="conclusaoKpis" style="grid-template-columns:repeat(4,1fr)"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px">
+    <div class="chart-card">
+      <h3>Distribuição Realizadas / Pendentes</h3>
+      <div class="chart-wrap"><canvas id="cConclusao"></canvas></div>
+      <div class="legend" id="legConclusao"></div>
+    </div>
+    <div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;">
+      <h3>Progresso Geral da Operação</h3>
+      <div style="margin:20px 0">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:13px;font-weight:600;color:var(--text2)">Entregas Realizadas</span>
+          <span style="font-size:13px;font-weight:800;color:var(--accent)" id="conclusaoProgressPct">0%</span>
+        </div>
+        <div style="height:18px;background:var(--border);border-radius:9px;overflow:hidden">
+          <div id="conclusaoProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#2563EB,#22C55E);border-radius:9px;transition:width 0.8s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px">
+          <span style="font-size:11px;color:var(--text3)" id="conclusaoProgressDetail">0 de 0 CTEs</span>
+          <span style="font-size:11px;color:var(--text3)" id="conclusaoPendPct">0% pendente</span>
+        </div>
+      </div>
+      <div style="background:var(--card-alt);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px">Legenda</div>
+        <div style="display:flex;flex-direction:column;gap:7px" id="conclusaoLegend"></div>
+      </div>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ PENDENTES PAGE ═══ -->
+<div id="page-pendentes" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>⏳ Motoristas Pendentes</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:13px;font-weight:700;color:var(--red)" id="pendentesResumo"></span>
+      <button class="btn btn-outline btn-sm" onclick="exportPendentesXLSX()">⬇️ Exportar Pendentes</button>
+    </div>
+  </div>
+  <div id="pendentesTotal" style="display:flex;gap:14px;margin-bottom:20px"></div>
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Motorista</th>
+            <th>Placa</th>
+            <th>CTEs</th>
+            <th>Realizadas</th>
+            <th>Pendentes</th>
+          </tr>
+        </thead>
+        <tbody id="pendentesBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ DASHBOARD GERENCIAL PAGE ═══ -->
+<div id="page-dashboard_mgr" class="page">
+<main>
+  <div class="hist-toolbar"><h2>📈 Dashboard Gerencial</h2></div>
+  <div class="kpis" id="mgrKpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px">
+    <div class="chart-card">
+      <h3>Distribuição de CTEs por Motorista (Top 8)</h3>
+      <div class="chart-wrap" style="height:220px"><canvas id="cMgrPie"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Top 10 Motoristas por Produtividade</h3>
+      <div class="chart-wrap" style="height:220px"><canvas id="cMgrBar"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-card" style="margin-bottom:18px">
+    <h3>Entregas x Pendências por Motorista (Top 15)</h3>
+    <div class="chart-wrap" style="height:240px"><canvas id="cMgrStacked"></canvas></div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ CADASTRO MOTORISTAS PAGE ═══ -->
+<div id="page-cadmotoristas" class="page">
+<main>
+  <div class="hist-toolbar">
+    <h2>👤 Cadastro de Motoristas</h2>
+    <div class="search-box" style="min-width:240px">
+      <span>🔍</span>
+      <input type="text" id="cadMotoristasSearch" placeholder="Pesquisar motorista..." oninput="renderCadMotoristas()">
+    </div>
+  </div>
+  <!-- Formulário de cadastro -->
+  <div class="driver-register-card" style="margin-bottom:24px">
+    <h3 id="cadFormTitle">➕ Cadastrar Novo Motorista</h3>
+    <input type="hidden" id="cadEditId">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;align-items:flex-end">
+      <div class="driver-register-field">
+        <label>Nome Completo *</label>
+        <input type="text" id="cadNome" placeholder="Ex: João da Silva">
+      </div>
+      <div class="driver-register-field">
+        <label>CPF *</label>
+        <input type="text" id="cadCpf" placeholder="000.000.000-00" maxlength="14" oninput="maskCPF(this)">
+      </div>
+      <div class="driver-register-field">
+        <label>Placa</label>
+        <input type="text" id="cadPlaca" placeholder="ABC-1234" maxlength="8">
+      </div>
+      <div class="driver-register-field">
+        <label>Celular</label>
+        <input type="text" id="cadCelular" placeholder="(00) 90000-0000" maxlength="16" oninput="maskPhone(this)">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="saveCadMotorista()">Salvar</button>
+        <button class="btn btn-outline" onclick="clearCadForm()" id="cadCancelBtn" style="display:none">Cancelar</button>
+      </div>
+    </div>
+    <div id="cadFormError" style="margin-top:10px;font-size:12px;color:var(--red);display:none"></div>
+  </div>
+  <!-- Tabela de motoristas -->
+  <div class="table-wrap">
+    <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nome</th>
+            <th>CPF</th>
+            <th>Placa</th>
+            <th>Celular</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="cadMotoristasBody"></tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- ═══ EXPORTAÇÃO PAGE ═══ -->
+<div id="page-exportacao" class="page">
+<main>
+  <div class="hist-toolbar"><h2>⬇️ Central de Exportação</h2></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:20px">
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">📋</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Operação</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Motorista, Placa, CTEs, Realizadas, Auditadas e Produtividade</p>
+      <button class="btn btn-primary btn-lg" onclick="exportOperacaoXLSX()">⬇️ Exportar Operação</button>
+    </div>
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">🏆</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Ranking</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Posição, Motorista e Produtividade de todos os motoristas</p>
+      <button class="btn btn-primary btn-lg" onclick="exportRankingXLSX()">⬇️ Exportar Ranking</button>
+    </div>
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">⏳</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Pendências</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Motorista, Placa e quantidade de CTEs pendentes</p>
+      <button class="btn btn-primary btn-lg" onclick="exportPendentesXLSX()">⬇️ Exportar Pendentes</button>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">📊</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Ocorrências</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Relatório completo de ocorrências com estatísticas</p>
+      <button class="btn btn-primary btn-lg" onclick="exportOccXLSX()">⬇️ Exportar Ocorrências</button>
+    </div>
+    <div class="chart-card" style="text-align:center;padding:36px 28px">
+      <div style="font-size:48px;margin-bottom:14px">🗂️</div>
+      <h3 style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:8px">Exportar Histórico Completo</h3>
+      <p style="font-size:13px;color:var(--text3);margin-bottom:20px">Todas as conferências salvas em uma planilha</p>
+      <button class="btn btn-primary btn-lg" onclick="exportAllXLSX()">⬇️ Exportar Histórico</button>
+    </div>
+  </div>
+</main>
+</div>
+
+<!-- MODAL VIAGEM ADICIONAL -->
+<div class="overlay" id="modalViagemAdicional">
+  <div class="modal">
+    <h2>➕ Viagem Adicional</h2>
+    <p>Adicione uma viagem extra à operação atual sem afetar os registros existentes.</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+      <input type="text" id="vaMotorista" placeholder="Nome do Motorista" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px;font-family:inherit;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      <input type="text" id="vaPlaca" placeholder="Placa (opcional)" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px;font-family:inherit;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      <input type="number" id="vaCtes" placeholder="Quantidade de CTEs" min="1" style="border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px;font-family:inherit;outline:none;transition:border .15s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal('modalViagemAdicional')">Cancelar</button>
+      <button class="btn btn-green" onclick="adicionarViagem()">✅ Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER M7S -->
+<footer class="site-footer">
+  <div class="footer-brand">
+    <div class="footer-m7s-logo">M7S</div>
+    <div class="footer-brand-text">
+      <div class="footer-dev-label">Desenvolvido por</div>
+      <div class="footer-company">Mindset7 Studio</div>
+      <div class="footer-tagline">Criatividade que posiciona.</div>
+    </div>
+  </div>
+  <div class="footer-right">
+    Portal de Conferência de Entregas<br>
+    <span style="color:var(--text3)">v1.1.0 · © 2026 Mindset7 Studio</span>
+  </div>
+</footer>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ASSISTENTE GEMINI -->
+<div class="gemini-panel" id="geminiPanel">
+  <div class="gemini-panel-header">
+    <span>✨ Assistente do Portal</span>
+    <button class="modal-close-btn" onclick="toggleGeminiPanel()">✕</button>
+  </div>
+  <div class="gemini-messages" id="geminiMessages"></div>
+  <div class="gemini-input-row">
+    <input type="text" id="geminiInput" placeholder="Pergunte algo sobre a operação..." onkeydown="if(event.key==='Enter')sendGeminiMessage()">
+    <button class="btn btn-primary btn-sm" onclick="sendGeminiMessage()">➤</button>
+  </div>
+</div>
+
+</div><!-- /.content-col -->
+</div><!-- /.app-shell -->
+
+
+<script src="js/firebase-keys.local.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/gemini-keys.local.js"></script>
+<script src="js/gemini-client.js"></script>
+<script src="js/state.js"></script>
+<script src="js/ui-dashboard.js"></script>
+<script src="js/occurrence-types.js"></script>
+<script src="js/autosave.js"></script>
+<script src="js/ui-occurrences-report.js"></script>
+<script src="js/ui-history.js"></script>
+<script src="js/login.js"></script>
+<script src="js/ui-drivers.js"></script>
+<script src="js/ui-reports.js"></script>
+<script src="js/dark-mode.js"></script>
+<script src="js/ui-retidos-cargas.js"></script>
+<script src="js/gemini-assistant.js"></script>
+<script src="js/app-init.js"></script>
+
+</body>
+</html>
