@@ -20,12 +20,21 @@
   function initFB() {
     try {
       if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-      fbDB = firebase.firestore();
-      setSyncStatus('synced');
-      // load occTypes from cloud on init
-      loadCloudOccTypes();
-      // start real-time listener for today
-      startTodayListener();
+
+      firebase.auth().signInAnonymously()
+        .then(() => {
+          fbDB = firebase.firestore();
+          setSyncStatus('synced');
+          // load occTypes from cloud on init
+          loadCloudOccTypes();
+          // start real-time listener for today
+          startTodayListener();
+        })
+        .catch((e) => {
+          console.warn('Firebase auth error:', e);
+          setSyncStatus('offline');
+        });
+
     } catch(e) {
       console.warn('Firebase init error:', e);
       setSyncStatus('offline');
